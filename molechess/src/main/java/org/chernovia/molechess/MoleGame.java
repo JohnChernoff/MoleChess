@@ -4,68 +4,82 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
-import java.util.logging.Level;
-
+import java.util.List;
+import com.github.bhlangonijr.chesslib.*;
+import com.github.bhlangonijr.chesslib.move.Move;
 import org.chernovia.lib.zugserv.web.WebSockServ;
 
 public class MoleGame implements Runnable {
 	
+	class MoveVote {
+		MolePlayer player;
+		Move move;
+		public MoveVote(MolePlayer p, Move m) { player = p; move = m; }
+		public String toString() {
+			return (player.user.name + ": " + move);
+		}
+	}
+	
 	public static final int UNKNOWN_COLOR = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
-	public enum GAME_PHASE { PREGAME, MOVING, VETOING, POSTGAME; }
+	public enum GAME_PHASE { PREGAME, VOTING, POSTGAME };
 	@SuppressWarnings("unchecked")
 	private ArrayList<MolePlayer>[] team = (ArrayList<MolePlayer>[]) new ArrayList[2];
-	private MolePlayer toMove = null;
-	private boolean running;
-	private boolean abandoned;
+	private MoleListener listener;
+	private boolean playing; //private boolean abandoned;
 	private MoleUser creator;
 	private String title;
-	private String moveTry;
-	private int minPlayers = 2, maxPlayers = 8;
-	private int turn = 1;
-	private int moveTime = 60;
-	private int vetoTime = 15;
-	private String gid;
+	private int minPlayers = 3, maxPlayers = 6;
+	private int turn;
+	private int voteTime = 12;
+	private Board board;
 	private Thread gameThread;
-	private int playerIndex = 0;
+	private int moveNum;
+	ArrayList<MoveVote> currentVotes;
+	ArrayList<ArrayList<MoveVote>> voteHistory;
 	private GAME_PHASE phase = GAME_PHASE.PREGAME;
   
-	public MoleGame(MoleUser c, String t) {
-		this.creator = c;
-		this.title = t;
-		this.running = false;
-		this.running = false;
-		this.abandoned = false;
+	public MoleGame(MoleUser c, String t, MoleListener l) {
+		creator = c; title = t; playing = false; listener = l;
 		for (int i = COLOR_BLACK; i <= COLOR_WHITE; i++) this.team[i] = new ArrayList<>();
+		currentVotes = new ArrayList<MoveVote>();
+		voteHistory = new ArrayList<ArrayList<MoveVote>>();
 	}
+	
+	public String getTitle() { return title; }
+	public int getMaxPlayers() { return maxPlayers; }
+	
+    public JsonNode toJSON() {
+    	ObjectNode obj = MoleServ.mapper.createObjectNode();
+    	ArrayNode playerArray = MoleServ.mapper.createArrayNode();
+    	for (int c = COLOR_BLACK; c <= COLOR_WHITE; c++) {
+    		for (MolePlayer player : team[c]) playerArray.add(player.toJSON()); 
+    	} 
+    	obj.set("players", (JsonNode)playerArray);
+    	obj.put("title", title);
+    	obj.put("creator", creator.name);
+    	return obj;
+    }
   
-	public MoleResult addPlayer(MoleUser user, int color) {
+	public void addPlayer(MoleUser user, int color) {
 		MolePlayer player = getPlayer(user);
 		if (player != null) {
 			if (player.away) {
 				player.away = false;
-				return new MoleResult("Rejoining game: " + title);
+				listener.handleAction(user, new MoleResult("Rejoining game: " + title));
 			} 
-			return new MoleResult(false, "Error: already joined");
+			listener.handleAction(user, new MoleResult(false, "Error: already joined"));
 		} 
-		if (phase != GAME_PHASE.PREGAME) return new MoleResult(false, "Game already begun"); 
-		if (team[color].size() >= maxPlayers - 1) return new MoleResult(false, "Too many players"); 
+		if (phase != GAME_PHASE.PREGAME) {
+			listener.handleAction(user, new MoleResult(false, "Game already begun")); 
+		}
+		if (team[color].size() >= maxPlayers - 1) {
+			listener.handleAction(user, new MoleResult(false, "Too many players")); 
+		}
 		team[color].add(new MolePlayer(user, this, color));
-		return new MoleResult("Joined game: " + title);
+		listener.handleAction(user, new MoleResult("Joined game: " + title));
 	}
-  
-	public MolePlayer getPlayer(MoleUser user) {
-		for (int color = 0; color <= 1; color++) {
-			for (MolePlayer player : team[color]) if (player.user.equals(user)) return player; 
-		} 
-		return null;
-	}
-  
-	public MolePlayer getPlayer(String name, int color) {
-		for (MolePlayer player : team[color]) if (player.user.name.equalsIgnoreCase(name)) return player; 
-		return null;
-	}
-  	
-	public MoleResult dropPlayer(MoleUser user) {
+	
+	public void dropPlayer(MoleUser user) {
 		MolePlayer player = getPlayer(user);
 		if (player != null) {
 			if (phase == GAME_PHASE.PREGAME) {
@@ -75,20 +89,149 @@ public class MoleGame implements Runnable {
 				player.away = true;
 			} 
 			spam(player.user.name + " leaves.");
-			if (phase == GAME_PHASE.POSTGAME) abandoned = deserted(); 
-			return new MoleResult("Left game: " + title);
+			listener.handleAction(user, new MoleResult("Left game: " + title));
+			if (deserted()) {
+				switch(phase) {
+					case PREGAME: listener.finished(this); break;
+					case VOTING: playing = false; break;
+					case POSTGAME: gameThread.interrupt(); 
+				}
+			}
 		} 
-		return new MoleResult(false, "Player not found");
+		else listener.handleAction(user, new MoleResult(false, "Player not found"));
+	}
+	
+    public void startGame(MoleUser user) {
+    	if (phase != GAME_PHASE.PREGAME) {
+    		listener.handleAction(user, new MoleResult(false, "Game already begun")); 
+    	}
+    	else if (!creator.equals(user)) {
+    		listener.handleAction(user, new MoleResult(false, "Error: permission denied"));
+    	}
+    	else {
+        	aiFill(COLOR_BLACK); aiFill(COLOR_WHITE);
+        	//if (team[0].size() != team[1].size()) return new MoleResult(false, "Error: unbalanced teams"); 
+        	//if (team[0].size() < minPlayers)return new MoleResult(false, "Error: too few players"); 
+      		gameThread = new Thread(this); gameThread.start();
+      		listener.handleAction(user, new MoleResult("Starting Game"));
+    	}
+    }
+    
+    public void voteMove(MoleUser user, String movestr) {
+    	MolePlayer player = getPlayer(user);
+    	if (player == null) {
+    		listener.handleAction(user, new MoleResult(false, "Player not found: " + user.name)); 
+    	}
+    	else if (phase != GAME_PHASE.VOTING) {
+    		listener.handleAction(user, new MoleResult(false, "Bad phase: " + phase));
+    	}
+    	else if (player.color != turn) {
+    		listener.handleAction(user, new MoleResult(false, "Wrong turn: " + player.color));
+    	}
+    	else {
+    		MoveVote mv = addVote(player,getMove(movestr));
+    		if (mv == null) {
+    			listener.handleAction(user, new MoleResult(false,"Bad Move: " + movestr));
+    		}
+    		else {
+    			listener.handleAction(user, new MoleResult(player.user.name + " votes: " + movestr));
+    		}
+    	}
+    }
+    
+    public void castVote(MoleUser user, String suspectName) {
+    	MolePlayer player = getPlayer(user);
+    	if (player == null)	{
+    		listener.handleAction(user, new MoleResult(false, "Player not found: " + user.name)); 
+    	}
+    	else if (!playing) {
+    		listener.handleAction(user, new MoleResult(false, "Game not currently running")); 
+    	}
+    	else {
+        	MolePlayer p = getPlayer(suspectName, player.color);
+        	if (phase != GAME_PHASE.VOTING) {
+        		listener.handleAction(user, new MoleResult(false, "Bad phase: " + phase));
+        	}
+        	else if (p != null) {
+            	listener.handleAction(user, new MoleResult("Voting off: " + suspectName));
+        		player.vote = p;
+        		spam(player.user.name + " votes off: " + player.user.name);
+        		MolePlayer suspect = checkVote(player.color);
+        		if (suspect != null) {
+        			spam(suspect.user.name + " is voted off!");
+        			suspect.votedOff = true;
+        			spam(suspect.user.name + " was " + suspect.user.name + "the Mole!");
+        			if (suspect.role == MolePlayer.ROLE.MOLE) {
+        				award(player.color, 100);
+        			} 
+        			else {
+        				award(getMole(player.color), 100);
+        			} 
+        		} 
+        	} 
+        	else {
+        		listener.handleAction(user, new MoleResult(false, "Suspect not found"));
+        	} 
+    	}
+    }
+    
+    public void run() {
+    	playing = true;
+    	setMole(COLOR_BLACK); setMole(COLOR_WHITE);
+    	turn = COLOR_WHITE; board = new Board(); moveNum = 0;
+    	listener.started(this);
+    	while (playing) {
+    		if (forfeit(turn)) winner(nextTurn()); 
+    		else {
+        		moveNum++;
+      			spam("Turn #" + moveNum + ": " + colorString(turn));
+       			boolean timeout = newPhase(GAME_PHASE.VOTING, voteTime);
+       			Move move;
+       			if (timeout && currentVotes.size() == 0) {
+       				spam("No legal moves selected, picking randomly...");
+       				move = pickMove(board.legalMoves());
+       			}
+       			else {
+       				spam("Picking randomly from the following moves: \n" + listMoves());
+       	 			move = pickMove(currentVotes);
+       			}
+       			spam("Selected Move: " + move);
+       			if (makeMove(move).result) {
+       				if (checkGameOver()) {
+       					spam("Game over!");
+       					playing = false;
+       				}
+       				else {
+       					currentVotes.clear();
+               			turn = nextTurn();
+       				}
+       			}
+       			else { spam("WTF: " + move); return; } ////shouldn't occur
+    		}
+    	}
+    	if (!deserted()) newPhase(GAME_PHASE.POSTGAME,300);
+    	listener.finished(this);
+    }
+  
+	private MolePlayer getPlayer(MoleUser user) {
+		for (int color = 0; color <= 1; color++) {
+			for (MolePlayer player : team[color]) if (player.user.equals(user)) return player; 
+		} 
+		return null;
 	}
   
+	private MolePlayer getPlayer(String name, int color) {
+		for (MolePlayer player : team[color]) if (player.user.name.equalsIgnoreCase(name)) return player; 
+		return null;
+	}
+  	
 	private boolean deserted() {
 		for (int color = 0; color <= 1; color++) {
-			for (MolePlayer player : team[color]) if (!player.away) return false; 
+			for (MolePlayer player : team[color]) if (!player.away && !player.ai) return false; 
 		}
 		return true;
 	}
 	
-	private boolean newPhase(GAME_PHASE p) { return newPhase(p, 0);	}
     private boolean newPhase(GAME_PHASE p, int countdown) {
     	phase = p;
     	spam("phase", phase.toString());
@@ -103,139 +246,96 @@ public class MoleGame implements Runnable {
     	} 
     	return timeout;
     }
-  
-    public MoleResult startGame(MoleUser user) {
-    	if (phase != GAME_PHASE.PREGAME) return new MoleResult(false, "Game already begun"); 
-    	if (team[0].size() != team[1].size()) return new MoleResult(false, "Error: unbalanced teams"); 
-    	if (team[0].size() < minPlayers)return new MoleResult(false, "Error: too few players"); 
-    	if (!creator.equals(user)) return new MoleResult(false, "Error: permission denied"); 
-    	JsonNode response = 
-		LichessSDK.createGame(MoleServ.MOLEPLAYERS[1], MoleServ.MOLE_OAUTH_BLACK, MoleServ.MOLE_OAUTH_WHITE);
-    	if (response != null) {
-    		gid = response.get("game").get("id").asText();
-    		gameThread = new Thread(this);
-    		gameThread.start();
-    		return new MoleResult("Game Created, ID: " + gid);
-    	} 
-    	return new MoleResult(false, "Lichess Game Creation Error");
+    
+    private void aiFill(int color) {
+    	int i = 0;
+    	while (team[color].size() < minPlayers) {
+        	MolePlayer player = new MolePlayer(MoleServ.DUMMIES[i++][color], this, color);
+        	player.ai = true;
+        	team[color].add(player);
+    	}
     }
-  
-    public void setMole(int color) {
+    
+    private void setMole(int color) {
     	int p = (int)Math.floor(Math.random() * team[color].size());
     	MolePlayer player = team[color].get(p);
     	player.role = MolePlayer.ROLE.MOLE;
     	player.user.tell("You're the mole!");
     }
   
-    public boolean isAbandoned() { return abandoned; }
-  
-    public boolean forfeit(int color) {
+    private boolean forfeit(int color) {
     	for (MolePlayer player : team[color]) if (player.isActive()) return false; 
     	return true;
     }
   
-    public void winner(int color) {
-    	spam(((color == 0) ? "Black" : "White") + " wins!");
-    	running = false;
+    //TODO: awards, etc.
+    private void winner(int color) {
+    	spam(colorString(color) + " wins!");
+    	playing = false;
+    }
+    
+    private String colorString(int color) {
+    	return (color == COLOR_BLACK) ? "Black" : "White";
+    }
+      
+    private boolean checkGameOver() {
+    	boolean gameover = false;
+    	if (board.isStaleMate()) {
+    		gameover = true;
+    	}
+    	else if (board.isMated()) {
+    		gameover = true;
+    	}
+    	else if (board.isInsufficientMaterial()) {
+    		gameover = true;
+    	}
+    	return gameover;
     }
   
-    public void run() {
-    	running = true;
-    	setMole(0); setMole(1);
-    	playerIndex = 0;
-    	while (running) {
-    		if (forfeit(turn)) { winner(nextTurn()); return; } 
-    		toMove = team[turn].get(playerIndex);
-    		boolean timeout = true;
-    		if (toMove.isActive()) {
-    			toMove.user.tell("turn", "Your turn!");
-    			spam("Turn: " + toMove.user.name);
-    			timeout = newPhase(GAME_PHASE.MOVING, moveTime);
-    		} 
-    		else {
-    			spam("Skipping: " + toMove.user.name);
-    		} 
-    		if (timeout) {
-    			passTurn(); //continue;
-    		} 
-    		timeout = newPhase(GAME_PHASE.VETOING, vetoTime);
-    		if (timeout) {
-    			if ((makeMove(moveTry)).result) {
-    				turn = nextTurn(); //continue;
-    			} 
-    			passTurn(); //continue;
-    		} 
-    		passTurn();
-    	} 
-    	newPhase(GAME_PHASE.POSTGAME);
+    private int nextTurn() {
+    	if (turn == COLOR_WHITE) return COLOR_BLACK; else return COLOR_WHITE;
+    }
+    
+    private String listMoves() {
+    	String list = ""; for (MoveVote mv : currentVotes) list += (mv + "\n");	return list;
+    }
+    
+    private Move pickMove(List<Move> moves) {
+    	int n = (int)(Math.random() * moves.size()); return moves.get(n);
+    }
+    private Move pickMove(ArrayList<MoveVote> moves) { //NOTE: purely random, no democracy, ergh
+    	int n = (int)(Math.random() * moves.size()); return moves.get(n).move;
     }
   
-    public void passTurn() {
-    	if (++playerIndex >= team[turn].size()) playerIndex = 0; 
+    private MoveVote addVote(MolePlayer player, Move move) {
+    	if (board.legalMoves().contains(move)) {
+    		MoveVote preVote = null;
+        	for (MoveVote vote : currentVotes) if (vote.player.equals(player)) preVote = vote;
+        	if (preVote != null) currentVotes.remove(preVote);
+        	MoveVote vote = new MoveVote(player,move);
+        	currentVotes.add(vote);
+        	if (currentVotes.size() == team[turn].size()) gameThread.interrupt();
+        	return vote;
+    	}
+    	else return null;
+    }
+    
+    private Move getMove(String movestr) {
+    	return new Move(movestr,turn == COLOR_BLACK ? Side.BLACK : Side.WHITE);
     }
   
-    public int nextTurn() {
-    	if (turn == COLOR_WHITE) return COLOR_BLACK; 
-    	if (++playerIndex >= team[turn].size()) playerIndex = 0; 
-    	return COLOR_WHITE;
-    }
-  
-    public MoleResult tryMove(MoleUser user, String move) {
-    	MolePlayer player = getPlayer(user);
-    	if (player == null) return new MoleResult(false, "Player not found: " + user.name); 
-    	if (phase != GAME_PHASE.MOVING) return new MoleResult(false, "Bad phase: " + phase); 
-    	if (toMove.equals(player)) {
-    		moveTry = move;
-    		spam(toMove.user.name + " tries: " + toMove.user.name);
-    		gameThread.interrupt();
-    		return new MoleResult("Trying: " + move);
-    	} 
-    	return new MoleResult(false, "Turn: " + toMove.user.name);
-    }
-  
-    public MoleResult makeMove(String move) {
-    	String url = "board/game/" + this.gid + "/move/" + move;
-    	String oauth = (turn == 0) ? MoleServ.MOLE_OAUTH_BLACK : MoleServ.MOLE_OAUTH_WHITE;
-    	JsonNode response = LichessSDK.apiRequest(url, oauth, false, null);
-    	if (response != null && response.get("ok").asBoolean()) {
-    		spam("move", "Move: " + move);
+    private MoleResult makeMove(Move move) {
+    	if (board.doMove(move)) {
+    		ObjectNode node = MoleServ.mapper.createObjectNode();
+    		node.put("lm",move.toString());
+    		node.put("fen",board.getFen());
+    		spam("game_update",node); 
     		return new MoleResult("Move: " + move);
-    	} 
-    	return new MoleResult(false, "Invalid Move: " + move);
+    	}
+    	return new MoleResult(false, "Invalid Move: " + move); //shouldn't occur
     }
   
-    public MoleResult handleVote(MoleUser user, String suspectName) {
-    	MolePlayer player = getPlayer(user);
-    	if (player == null)	return new MoleResult(false, "Player not found: " + user.name); 
-    	if (!running) return new MoleResult(false, "Game not currently running"); 
-    	MolePlayer p = getPlayer(suspectName, player.color);
-    	if (p != null) {
-    		player.vote = p;
-    		spam(player.user.name + " votes off: " + player.user.name);
-    		MolePlayer suspect = checkVote(player.color);
-    		if (suspect != null) {
-    			if (phase == GAME_PHASE.VETOING && toMove == suspect) {
-    				spam("Taking back: " + moveTry);
-    				gameThread.interrupt();
-    			} 
-    			spam(suspect.user.name + " is voted off!");
-    			suspect.votedOff = true;
-    			spam(suspect.user.name + " was " + suspect.user.name + "the Mole!");
-    			if (suspect.role == MolePlayer.ROLE.MOLE) {
-    				award(player.color, 100);
-    			} 
-    			else {
-    				award(getMole(player.color), 100);
-    			} 
-    		} 
-    	} 
-    	else {
-    		return new MoleResult(false, "Suspect not found");
-    	} 
-    	return new MoleResult("Voting off: " + suspectName);
-    }
-  
-    public MolePlayer checkVote(int color) {
+    private MolePlayer checkVote(int color) {
     	MolePlayer suspect = null;
     	for (MolePlayer p : team[color]) {
     		if (p.isActive() && p.role != MolePlayer.ROLE.MOLE) {
@@ -245,55 +345,34 @@ public class MoleGame implements Runnable {
     	return suspect;
     }
   
-    public MolePlayer getMole(int color) {
+    private MolePlayer getMole(int color) {
     	for (MolePlayer p : team[color]) if (p.role == MolePlayer.ROLE.MOLE) return p; 
      	return null;
     }
   
-    public void award(int color, int bonus) {
+    private void award(int color, int bonus) {
     	for (MolePlayer p : team[color]) award(p, bonus); 
     }
   
-    public void award(MolePlayer player, int bonus) {
+    private void award(MolePlayer player, int bonus) {
     	if (player.isActive()) {
     		player.score += bonus;
     		spam(player.user.name + " gets " + player.user.name + " points");
     	} 
     }
   
-    public JsonNode toJSON() {
-    	ObjectNode obj = MoleServ.mapper.createObjectNode();
-    	ArrayNode playerArray = MoleServ.mapper.createArrayNode();
-    	for (int c = COLOR_BLACK; c <= COLOR_WHITE; c++) {
-    		for (MolePlayer player : team[c]) playerArray.add(player.toJSON()); 
-    	} 
-    	obj.set("players", (JsonNode)playerArray);
-    	obj.put("title", title);
-    	obj.put("creator", creator.name);
-    	return (JsonNode)obj;
-    }
-  
-    public void spam(String msg) { spam(WebSockServ.MSG_SERV, msg); }
-    public void spam(JsonNode node) { spam(WebSockServ.MSG_SERV, node); }
-    public void spam(String type, String msg) {
+    //private void spam(JsonNode node) { spam(WebSockServ.MSG_SERV, node); }
+    private void spam(String msg) { spam(WebSockServ.MSG_SERV, msg); }
+    private void spam(String type, String msg) {
     	ObjectNode node = MoleServ.mapper.createObjectNode();
     	node.put("msg", msg);
     	spam(type,node);
     }
-    public void spam(String type, JsonNode node) {
+    private void spam(String type, JsonNode node) {
     	for (int c = 0; c <= 1; c++) {
     		for (MolePlayer player : team[c]) {
     			if (!player.away) player.user.tell(type, node); 
     		} 
     	} 
-    }
-  
-    public void newEvent(JsonNode data) {
-    	MoleServ.logger.log(Level.INFO, "New Event for ID: " + gid + " -> " + data.toPrettyString());
-    	if (data.get("fen") != null) spam("game_update", data); 
-    }
-  
-    public void gameFinished() {
-    	MoleServ.logger.log(Level.INFO, "Game Finished: " + gid);
     }
 }

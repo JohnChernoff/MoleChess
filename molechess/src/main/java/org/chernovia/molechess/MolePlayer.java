@@ -4,39 +4,31 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class MolePlayer {
+   	enum ROLE { MOLE, PLAYER };
 	MoleGame game;
   	MoleUser user;
-  
-  	enum ROLE { MOLE, PLAYER; }
-  
-  boolean away = false;
-  
-  boolean votedOff = false;
-  
-  int score = 0;
-  
-  int color = 0;
-  
-  MolePlayer vote = null;
-  
-  ROLE role = ROLE.PLAYER;
+   	boolean away = false;
+  	boolean votedOff = false;
+  	boolean ai = false;
+    int score;
+    int color;
+    MolePlayer vote = null;
+    ROLE role = ROLE.PLAYER;
   
   public MolePlayer(MoleUser usr, MoleGame g, int c) {
-    this.user = usr;
-    this.game = g;
-    this.color = c;
+    user = usr; game = g; color = c; score = 0;
   }
   
   public boolean isActive() {
-    return (!this.away && !this.votedOff);
+    return (!away && !votedOff);
   }
   
   public JsonNode toJSON() {
     ObjectNode obj = MoleServ.mapper.createObjectNode();
-    obj.put("score", this.score);
-    obj.put("color", this.color);
-    obj.put("away", this.away);
-    obj.set("user", this.user.toJSON());
-    return (JsonNode)obj;
+    obj.put("score", score);
+    obj.put("color", color);
+    obj.put("away", away);
+    obj.set("user", user.toJSON());
+    return obj;
   }
 }
