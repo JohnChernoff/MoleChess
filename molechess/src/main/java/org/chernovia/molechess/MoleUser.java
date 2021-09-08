@@ -1,14 +1,12 @@
 package org.chernovia.molechess;
 
-import org.chernovia.lib.zugserv.web.Connection;
+import org.chernovia.lib.zugserv.Connection;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class MoleUser {
   String oauth;
-  
   String name;
-  
   private Connection conn;
   
   public MoleUser(Connection c, String o, String n) {
@@ -20,6 +18,8 @@ public class MoleUser {
   public boolean sameConnection(Connection c) {
     return (this.conn == c);
   }
+  
+  public void setConn(Connection c) { conn = c; }
   
   public void tell(String msg) {
     tell("serv_msg", msg);
@@ -40,5 +40,11 @@ public class MoleUser {
     ObjectNode obj = MoleServ.mapper.createObjectNode();
     obj.put("name", this.name);
     return (JsonNode)obj;
+  }
+  
+  public boolean equals(Object o) {
+	  if (o == this) return true;
+	  if (!(o instanceof MoleUser)) return false;
+	  return ((MoleUser)o).oauth.equals(this.oauth);
   }
 }

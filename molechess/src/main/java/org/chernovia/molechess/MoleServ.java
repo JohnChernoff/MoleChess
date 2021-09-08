@@ -7,96 +7,137 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
+import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
+import org.chernovia.lib.lichess.LichessSDK;
+import org.chernovia.lib.zugserv.*;
 import org.chernovia.lib.zugserv.web.*;
 
 public class MoleServ implements ConnListener, MoleListener {
 	static final ObjectMapper mapper = new ObjectMapper();
 	static final Logger logger = Logger.getLogger("MoleLog");
-	static int MAX_STR_LEN = 32;
+	static Pattern alphanumericPattern = Pattern.compile("^[a-zA-Z0-9]*$");
+	static int MAX_STR_LEN = 30, DEF_VOTE_TIME = 12;
 	static boolean TESTING = true;
 	static MoleUser[][] DUMMIES;
-	ArrayList<MoleUser> users = new ArrayList<>();
-	HashMap<String, MoleGame> games = new HashMap<>();
-	ZugServ serv;
-  
+	static String STOCK_PATH;
+	private ArrayList<MoleUser> users = new ArrayList<>();
+	private HashMap<String, MoleGame> games = new HashMap<>();
+	private ZugServ serv;
+	
 	public static void main(String[] args) {
+		DEF_VOTE_TIME = Integer.parseInt(args[0]);
+		STOCK_PATH = args[1];
 		DUMMIES = new MoleUser[12][2];
 		for (int c=0;c<=1;c++) for (int i=0;i<12;i++) {
 			DUMMIES[i][c] = new MoleUser(null,null,"Dummy" + (c==0 ? "B" : "W") + i);
 		}
 		new MoleServ(5555);
 	}
-  
+	
 	public MoleServ(int port) {
 		logger.log(Level.ALL, "Hello!");
 		serv = (ZugServ)new WebSockServ(port, this);
 		serv.startSrv();
 	}
-  
-	public MoleUser getUser(Connection conn) {
+	
+	private MoleUser getUserByToken(String token) {
+		for (MoleUser user : users) if (user.oauth.equals(token)) return user; 
+		return null;
+	}
+	
+	private MoleUser getUser(Connection conn) {
 		for (MoleUser user : users) if (user.sameConnection(conn)) return user; 
 		return null;
 	}
-  
-	public MoleUser getUser(String name) {
-		for (MoleUser user : users) if (user.name.equals(name)) return user; 
-		return null;
+	
+	private ArrayNode getAllGames() {
+		try {
+			ArrayNode gameObj = mapper.createArrayNode();
+			for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
+				gameObj.add(((MoleGame)entry.getValue()).toJSON()); 
+			}
+			return gameObj;
+		}
+		catch (ConcurrentModificationException fuck) { 
+			logger.log(Level.SEVERE,fuck.getMessage()); return null; 
+		}
 	}
   
-	public boolean validString(String str) {
-		return (str.length() > 0 && str.length() < MAX_STR_LEN);
+	private boolean validString(String str) {
+		boolean valid = false;
+		if (str.length() > 0 && str.length() < MAX_STR_LEN) {
+			if (alphanumericPattern.matcher(str.trim()).find()) valid = true;
+		}
+		return valid; 
 	}
   
-	public void newGame(MoleUser creator, String title) {
+	private void newGame(MoleUser creator, String title) {
 		if (validString(title) && !this.games.containsKey(title)) {
-			games.put(title, new MoleGame(creator, title, this));
-			spam("games_update", getAllGames());
+			MoleGame game = new MoleGame(creator, title, this); game.setVoteTime(DEF_VOTE_TIME);
+			games.put(title, game);
+			updateAll();
 		} 
 		else {
 			creator.tell(WebSockServ.MSG_ERR, "Failed to create game");
 		} 
 	}
-  
-	public ArrayNode getAllGames() {
-		ArrayNode gameObj = mapper.createArrayNode();
-		for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
-			gameObj.add(((MoleGame)entry.getValue()).toJSON()); 
-		}
-		return gameObj;
-	}
-  
+    
 	public void newMsg(Connection conn, int channel, String msg) {
 		try {
-			logger.log(Level.INFO, msg);
+			//logger.log(Level.INFO, msg);
 			MoleUser user = getUser(conn);
 			JsonNode msgNode = mapper.readTree(msg);
 			JsonNode typeNode = msgNode.get("type"), dataNode = msgNode.get("data");
+			if (typeNode == null || dataNode == null) {
+				conn.tell(WebSockServ.MSG_ERR, "Error: Bad Data(null)"); return;
+			}
 			String typeTxt = typeNode.asText(), dataTxt = dataNode.asText();
 			if (typeTxt.equals("oauth")) {
-				JsonNode accountData = dataNode.get("API"); //LichessSDK.apiRequest("account", dataTxt);
-				if (accountData == null) {
-					conn.tell(WebSockServ.MSG_ERR, "Login Error: Bad Oauth Token"); 
+				String token = dataTxt; 
+				if (token == null) {
+					conn.tell(WebSockServ.MSG_ERR, "Login Error: Missing Oauth Token"); 
 				}
-				JsonNode username = accountData.get("username");
-				if (username != null) {
-					users.add(new MoleUser(conn, dataTxt, username.asText()));
-					conn.tell(WebSockServ.MSG_LOG_SUCCESS, "Login Successful: Welcome!");
-				} 
+				else {
+					JsonNode accountData = LichessSDK.apiRequest("account", token);
+					if (accountData == null) conn.tell(WebSockServ.MSG_ERR, "Login Error: Bad Oauth Token");
+					else {
+						JsonNode username = accountData.get("username");
+						if (username != null) {
+							users.add(new MoleUser(conn, token, username.asText()));
+							conn.tell(WebSockServ.MSG_LOG_SUCCESS, "Login Successful: Welcome!");
+						}
+						else conn.tell(WebSockServ.MSG_ERR, "Login Error: weird Lichess API result");
+					}
+				}
 			} 
 			else if (TESTING && typeTxt.equals("login")) {
-				users.add(new MoleUser(conn, "", dataTxt));
-				conn.tell(WebSockServ.MSG_LOG_SUCCESS, "Login Successful: Welcome!");
-				conn.tell("games_update", getAllGames());
+				if (validString(dataTxt)) {
+					MoleUser mu = getUserByToken(dataTxt); 
+					if (mu != null) {
+						mu.tell("Multiple login detected");
+						mu.setConn(conn); //users.remove(mu); users.add(newUser);
+						mu.tell(WebSockServ.MSG_LOG_SUCCESS, "Relog Successful: Welcome back!");
+					}
+					else {
+						MoleUser newUser = new MoleUser(conn, dataTxt, dataTxt);
+						users.add(newUser);	
+						newUser.tell(WebSockServ.MSG_LOG_SUCCESS, "Login Successful: Welcome!");
+					}
+					conn.tell("games_update", getAllGames());
+				}
+				else conn.tell(WebSockServ.MSG_ERR, "Ruhoh: Invalid Data!");
 			} 
 			else if (user == null) {
 				conn.tell(WebSockServ.MSG_ERR, "Please log in");
 			} 
 			else if (typeTxt.equals("newgame")) {
-				newGame(user, dataTxt); //TODO: sanity check
+				if (validString(dataTxt)) newGame(user, dataTxt);
+				else user.tell(WebSockServ.MSG_ERR, "Ruhoh: Invalid Data!");
 			} 
 			else if (typeTxt.equals("joingame")) {
 				String title = dataNode.get("title").asText();
@@ -126,17 +167,18 @@ public class MoleServ implements ConnListener, MoleListener {
 				else {
 					game.startGame(user);
 				} 
-			} 
+			}
 			else if (typeTxt.equals("move")) {
 				JsonNode title = dataNode.get("board");
 				JsonNode move = dataNode.get("move");
+				JsonNode prom = dataNode.get("promotion");
 				if (title != null && move != null) {
 					MoleGame game = games.get(title.asText());
-					if (game == null) {
+					if (game == null) { //unlikely but possible?
 						user.tell(WebSockServ.MSG_ERR, "Game not found: " + title);
 					} 
 					else {
-						game.voteMove(user, move.asText());
+						game.voteMove(user, move.asText() + (prom.isNull() ? "" : prom.asText()));
 					} 
 				} 
 				else {
@@ -159,6 +201,15 @@ public class MoleServ implements ConnListener, MoleListener {
 					user.tell(WebSockServ.MSG_ERR, "WTF: " + dataTxt);
 				} 
 			} 
+			else if (typeTxt.equals("resign")) {
+				MoleGame game = games.get(dataTxt);
+				if (game == null) {
+					user.tell(WebSockServ.MSG_ERR, "Game not found: " + dataTxt);
+				} 
+				else {
+					game.resign(user);
+				}
+			}
 			else if (typeTxt.equals("chat")) {
 				ObjectNode node = mapper.createObjectNode();
 				node.put("player", user.name);
@@ -177,7 +228,7 @@ public class MoleServ implements ConnListener, MoleListener {
   	public void spam(String type, String msg) {
   		ObjectNode node = mapper.createObjectNode();
   		node.put("msg", msg);
-  		spam(type, (JsonNode)node);
+  		spam(type, node);
   	}
   
   	public void spam(String type, JsonNode node) {
@@ -190,26 +241,28 @@ public class MoleServ implements ConnListener, MoleListener {
 	
 	@Override
 	public void handleAction(MoleUser user, MoleResult action) {
-		if (action.result) {
-			user.tell(action.message);
-			spam("games_update", getAllGames());
-		} 
-		else {
-			user.tell(WebSockServ.MSG_ERR, action.message);
-		} 
+		if (user != null) {
+			if (action.result) {
+				user.tell(action.message);
+				updateAll();
+			} 
+			else {
+				user.tell(WebSockServ.MSG_ERR, action.message);
+			} 
+		}
 	}
 
 	@Override
 	public void finished(MoleGame game) {
 		games.remove(game.getTitle());
-		spam("games_update", getAllGames());
+		updateAll();
 	}
 	
 	@Override
   	public void connected(Connection conn) {}
     
 	@Override
-  	public void disconnected(Connection conn) {
+  	public void disconnected(Connection conn) { //TODO: concurrency argh
   		MoleUser user = getUser(conn);
   		if (user != null) {
   			for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
@@ -217,7 +270,12 @@ public class MoleServ implements ConnListener, MoleListener {
   				game.dropPlayer(user); 				
   			}
   		}
-  		spam("games_update", (JsonNode)getAllGames());
+  		updateAll();
   	}
+
+	@Override
+	public void updateAll() {
+		spam("games_update", getAllGames());
+	}
 }
 
