@@ -19,6 +19,7 @@ public class MoleUser {
     return (this.conn == c);
   }
   
+  public Connection getConn() { return conn; }
   public void setConn(Connection c) { conn = c; }
   
   public void tell(String msg) {

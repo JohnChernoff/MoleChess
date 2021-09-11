@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.ConcurrentModificationException;
 import java.util.HashMap;
@@ -17,17 +19,32 @@ import org.chernovia.lib.lichess.LichessSDK;
 import org.chernovia.lib.zugserv.*;
 import org.chernovia.lib.zugserv.web.*;
 
-public class MoleServ implements ConnListener, MoleListener {
+//TODO: how do I export to pgn?
+//game specific chat
+//limit number of games a user may create
+//stockplug M1 blindness
+//~how do I spectate that game?
+//~empty/pregame board timeouts
+//~handle logins with same token
+//
+public class MoleServ extends Thread implements ConnListener, MoleListener {
 	static final ObjectMapper mapper = new ObjectMapper();
 	static final Logger logger = Logger.getLogger("MoleLog");
 	static Pattern alphanumericPattern = Pattern.compile("^[a-zA-Z0-9]*$");
 	static int MAX_STR_LEN = 30, DEF_VOTE_TIME = 12;
-	static boolean TESTING = true;
+	static boolean TESTING = false;
 	static MoleUser[][] DUMMIES;
 	static String STOCK_PATH;
 	private ArrayList<MoleUser> users = new ArrayList<>();
 	private HashMap<String, MoleGame> games = new HashMap<>();
 	private ZugServ serv;
+	private int purgeFreq = 30;
+	boolean running = false;
+	
+	public static void log(String msg) { log(Level.INFO,msg);	}
+	public static void log(Level level, String msg) { 
+		logger.log(level,msg + " (" + LocalDateTime.now() + ")"); 
+	}
 	
 	public static void main(String[] args) {
 		DEF_VOTE_TIME = Integer.parseInt(args[0]);
@@ -36,11 +53,11 @@ public class MoleServ implements ConnListener, MoleListener {
 		for (int c=0;c<=1;c++) for (int i=0;i<12;i++) {
 			DUMMIES[i][c] = new MoleUser(null,null,"Dummy" + (c==0 ? "B" : "W") + i);
 		}
-		new MoleServ(5555);
+		new MoleServ(5555).start();;
 	}
 	
 	public MoleServ(int port) {
-		logger.log(Level.ALL, "Hello!");
+		log("Constructing MoleServ on port: " + port);
 		serv = (ZugServ)new WebSockServ(port, this);
 		serv.startSrv();
 	}
@@ -64,9 +81,35 @@ public class MoleServ implements ConnListener, MoleListener {
 			return gameObj;
 		}
 		catch (ConcurrentModificationException fuck) { 
-			logger.log(Level.SEVERE,fuck.getMessage()); return null; 
+			log(Level.SEVERE,fuck.getMessage()); return null; 
 		}
 	}
+	
+  	private MoleUser switchCheck(Connection conn, String token) {
+			MoleUser mu = getUserByToken(token); 
+			if (mu != null) {
+				mu.tell("Multiple login detected, closing");
+				mu.getConn().close();
+				mu.setConn(conn); //users.remove(mu); users.add(newUser);
+				return mu;
+			}
+			else return null;
+  	}
+  	
+  	private void testLogin(Connection conn, String nameToken) {
+  		if (validString(nameToken)) {
+  			if (switchCheck(conn,nameToken) == null) {
+  				conn.tell(WebSockServ.MSG_LOG_SUCCESS, "Relog Successful: Welcome back!");
+  			}
+  			else {
+  				MoleUser newUser = new MoleUser(conn, nameToken, nameToken);
+  				users.add(newUser);	
+  				newUser.tell(WebSockServ.MSG_LOG_SUCCESS, "Login Successful: Welcome!");
+  			}
+  			conn.tell("games_update", getAllGames());
+  		}
+  		else conn.tell(WebSockServ.MSG_ERR, "Ruhoh: Invalid Data!");
+  	}
   
 	private boolean validString(String str) {
 		boolean valid = false;
@@ -87,9 +130,8 @@ public class MoleServ implements ConnListener, MoleListener {
 		} 
 	}
     
-	public void newMsg(Connection conn, int channel, String msg) {
+	public void newMsg(Connection conn, int channel, String msg) { //log("NewMsg: " + msg);
 		try {
-			//logger.log(Level.INFO, msg);
 			MoleUser user = getUser(conn);
 			JsonNode msgNode = mapper.readTree(msg);
 			JsonNode typeNode = msgNode.get("type"), dataNode = msgNode.get("data");
@@ -99,7 +141,10 @@ public class MoleServ implements ConnListener, MoleListener {
 			String typeTxt = typeNode.asText(), dataTxt = dataNode.asText();
 			if (typeTxt.equals("oauth")) {
 				String token = dataTxt; 
-				if (token == null) {
+				if (switchCheck(conn,token) != null) {
+					conn.tell(WebSockServ.MSG_LOG_SUCCESS, "Relog Successful: Welcome back!");
+				}
+				else if (token == null) {
 					conn.tell(WebSockServ.MSG_ERR, "Login Error: Missing Oauth Token"); 
 				}
 				else {
@@ -115,22 +160,8 @@ public class MoleServ implements ConnListener, MoleListener {
 					}
 				}
 			} 
-			else if (TESTING && typeTxt.equals("login")) {
-				if (validString(dataTxt)) {
-					MoleUser mu = getUserByToken(dataTxt); 
-					if (mu != null) {
-						mu.tell("Multiple login detected");
-						mu.setConn(conn); //users.remove(mu); users.add(newUser);
-						mu.tell(WebSockServ.MSG_LOG_SUCCESS, "Relog Successful: Welcome back!");
-					}
-					else {
-						MoleUser newUser = new MoleUser(conn, dataTxt, dataTxt);
-						users.add(newUser);	
-						newUser.tell(WebSockServ.MSG_LOG_SUCCESS, "Login Successful: Welcome!");
-					}
-					conn.tell("games_update", getAllGames());
-				}
-				else conn.tell(WebSockServ.MSG_ERR, "Ruhoh: Invalid Data!");
+			else if (MoleServ.TESTING && typeTxt.equals("login")) {
+				testLogin(conn,dataTxt);
 			} 
 			else if (user == null) {
 				conn.tell(WebSockServ.MSG_ERR, "Please log in");
@@ -139,34 +170,27 @@ public class MoleServ implements ConnListener, MoleListener {
 				if (validString(dataTxt)) newGame(user, dataTxt);
 				else user.tell(WebSockServ.MSG_ERR, "Ruhoh: Invalid Data!");
 			} 
+			else if (typeTxt.equals("obsgame")) {
+				MoleGame game = games.get(dataTxt);
+				if (game == null) { user.tell(WebSockServ.MSG_ERR, "Game does not exist"); } 
+				else { game.addObserver(user); } 
+			}
 			else if (typeTxt.equals("joingame")) {
 				String title = dataNode.get("title").asText();
 				int color = dataNode.get("color").asInt();
 				MoleGame game = games.get(title);
-				if (game == null) {
-					user.tell(WebSockServ.MSG_ERR, "Game does not exist");
-				} 
-				else {
-					game.addPlayer(user, color);
-				} 
+				if (game == null) { user.tell(WebSockServ.MSG_ERR, "Game does not exist");	} 
+				else { game.addPlayer(user, color);	} 
 			} 
 			else if (typeTxt.equals("partgame")) {
 				MoleGame game = games.get(dataTxt);
-				if (game == null) {
-					user.tell(WebSockServ.MSG_ERR, "Game not joined: " + dataTxt);
-				} 
-				else {
-					game.dropPlayer(user);
-				}
+				if (game == null) { user.tell(WebSockServ.MSG_ERR, "Game not joined: " + dataTxt); } 
+				else { game.dropPlayer(user); }
 			} 
 			else if (typeTxt.equals("startgame")) {
 				MoleGame game = this.games.get(dataTxt);
-				if (game == null) {
-					user.tell(WebSockServ.MSG_ERR, "You're not in a game");
-				} 
-				else {
-					game.startGame(user);
-				} 
+				if (game == null) { user.tell(WebSockServ.MSG_ERR, "You're not in a game");	} 
+				else { game.startGame(user); } 
 			}
 			else if (typeTxt.equals("move")) {
 				JsonNode title = dataNode.get("board");
@@ -220,11 +244,11 @@ public class MoleServ implements ConnListener, MoleListener {
 				user.tell(WebSockServ.MSG_ERR, "Unknown command");
 			} 
 		} 
-		catch (JsonMappingException e) { logger.log(Level.INFO, "JSON oops: " + e.getMessage()); } 
-		catch (JsonProcessingException e) { logger.log(Level.INFO, "JSON error: " + e.getMessage()); } 
-		catch (NullPointerException e) { e.printStackTrace(); } 
+		catch (JsonMappingException e) { log("JSON Mapping goof: " + e.getMessage()); } 
+		catch (JsonProcessingException e) { log("JSON Processing error: " + e.getMessage()); } 
+		catch (NullPointerException e) { e.printStackTrace(); }
 	}
-	
+  	
   	public void spam(String type, String msg) {
   		ObjectNode node = mapper.createObjectNode();
   		node.put("msg", msg);
@@ -276,6 +300,25 @@ public class MoleServ implements ConnListener, MoleListener {
 	@Override
 	public void updateAll() {
 		spam("games_update", getAllGames());
+	}
+	
+	public void run() {
+		log("Starting main MoleServ loop");
+		running = true;
+		while (running) {
+			boolean purged = false;
+			try { 
+				Thread.sleep(purgeFreq * 1000); 
+	  			for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
+	  				MoleGame game = (MoleGame)entry.getValue();
+	  				if (game.isDefunct(99999)) games.remove(entry.getKey()); purged = true;
+	  			}
+	  			if (purged) updateAll();
+			}
+			catch (InterruptedException e) { running = false; }
+		}
+		serv.stopSrv();
+		log("Finished main MoleServ loop");
 	}
 }
 

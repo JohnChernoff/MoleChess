@@ -9,13 +9,10 @@ import java.util.ArrayList;
 import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Scanner;
-import java.util.logging.Level;
 import com.github.bhlangonijr.chesslib.*;
 import com.github.bhlangonijr.chesslib.move.Move;
 import org.chernovia.lib.zugserv.web.WebSockServ;
 
-//TODO: how do I export to pgn?
-//how do I spectate that game?
 public class MoleGame implements Runnable {
 	
 	class MoveVote {
@@ -83,17 +80,20 @@ public class MoleGame implements Runnable {
 	}
 	
 	public static ArrayList<String> MOLE_NAMES = getRandomNames("resources/molenames.txt");
+	public static final String MSG_TYPE_MOVELIST = "movelist";
 	public static final int COLOR_UNKNOWN = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
 	public enum GAME_RESULT { ONGOING, DRAW, CHECKMATE, STALEMATE, ABANDONED };
 	public enum GAME_PHASE { PREGAME, VOTING, POSTGAME };
 	private MoleTeam[] teams = new MoleTeam[2];
+	ArrayList<MoleUser> observers = new ArrayList<MoleUser>();
 	private MoleListener listener;
 	private boolean playing;
 	private MoleUser creator;
 	private String title;
+	private long lastActivity;
 	private int minPlayers = 3, maxPlayers = 6;
 	private int turn;
-	private int voteTime = 12, aiSpeed = 6000;
+	private int voteTime = 12, postTime = 300, aiSpeed = 6000;
 	private Board board;
 	private Thread gameThread;
 	private int moveNum;
@@ -111,11 +111,15 @@ public class MoleGame implements Runnable {
 		creator = c; title = t; playing = false; listener = l;
 		for (int color = COLOR_BLACK; color <= COLOR_WHITE; color++) teams[color] = new MoleTeam(color);
 		voteHistory = new ArrayList<MoveVotes>();
+		lastActivity = System.currentTimeMillis();
 	}
 	
 	public String getTitle() { return title; }
 	public int getMaxPlayers() { return maxPlayers; }
 	public void setVoteTime(int t) { voteTime = t; aiSpeed = (voteTime/2) * 1000; }
+	public boolean isDefunct(long timeout) {
+		return (!playing && ((System.currentTimeMillis() - timeout) > lastActivity));
+	}
 	
     public JsonNode toJSON() {
     	ObjectNode obj = MoleServ.mapper.createObjectNode();
@@ -125,6 +129,16 @@ public class MoleGame implements Runnable {
     	obj.put("title", title);
     	obj.put("creator", creator.name);
     	return obj;
+    }
+    
+    public void addObserver(MoleUser user) {
+    	if (!observers.contains(user)) {
+    		observers.add(user); user.tell(MSG_TYPE_MOVELIST,historyToJSON());
+    	}
+    }
+    
+    public void removeObserver(MoleUser user) {
+    	if (observers.remove(user)); user.tell("No longer observing: " + title);
     }
   
 	public void addPlayer(MoleUser user, int color) {
@@ -145,10 +159,13 @@ public class MoleGame implements Runnable {
 		else {
 			teams[color].players.add(new MolePlayer(user, this, color, nextGUIColor()));
 			listener.handleAction(user, new MoleResult("Joined game: " + title));
+			lastActivity = System.currentTimeMillis();
 		}
 	}
 	
 	public void dropPlayer(MoleUser user) {
+		boolean observing = false; //kinda kludgy, but hey
+		if (observers.contains(user)) { removeObserver(user); observing = true; }
 		MolePlayer player = getPlayer(user);
 		if (player != null) {
 			if (phase == GAME_PHASE.PREGAME) {
@@ -167,7 +184,7 @@ public class MoleGame implements Runnable {
 				}
 			}
 		} 
-		else listener.handleAction(user, new MoleResult(false, "Player not found"));
+		else if (!observing) listener.handleAction(user, new MoleResult(false, "Player not found"));
 	}
 	
     public void startGame(MoleUser user) {
@@ -289,7 +306,7 @@ public class MoleGame implements Runnable {
        			if (makeMove(move).result) {
        				if (playing) {
        					voteHistory.add(getMoveVotes(turn,board.getFen(),move));
-                		spamHistory();
+       			    	spam(MSG_TYPE_MOVELIST,historyToJSON());
                 		clearMoveVotes(turn);
        					turn = getNextTurn();
                 		moveNum++;
@@ -298,7 +315,7 @@ public class MoleGame implements Runnable {
        			else { spam("WTF: " + move); return; } ////shouldn't occur
    			}
 		}
-    	if (!deserted()) newPhase(GAME_PHASE.POSTGAME,300);
+    	if (!deserted()) newPhase(GAME_PHASE.POSTGAME,postTime);
     	listener.finished(this);
     }
     
@@ -342,13 +359,13 @@ public class MoleGame implements Runnable {
 		}
     }
     
-    private void spamHistory() {
+    private JsonNode historyToJSON() {
     	ObjectNode node = MoleServ.mapper.createObjectNode();
     	ArrayNode historyNode = MoleServ.mapper.createArrayNode();
     	for (MoveVotes votes : voteHistory) historyNode.add(votes.toJSON());    		
     	node.set("history",historyNode);
     	node.put("title",title); //log("Move History: " + node.toPrettyString());
-    	spam("movelist",node);
+    	return node;
     }
     
 	private MolePlayer getPlayer(MoleUser user) {
@@ -583,7 +600,8 @@ public class MoleGame implements Runnable {
     	catch (ConcurrentModificationException oops) { //dunno how exactly this happens...
     		log(oops.getMessage()); 
     	}
-     }
+    	for (MoleUser user : observers) user.tell(type, node);
+    }
     
     private Color nextGUIColor() {
     	currentGUIHue += .3; if (currentGUIHue > 1) currentGUIHue--; //log("Current Hue: " + currentGUIHue);
@@ -591,9 +609,7 @@ public class MoleGame implements Runnable {
   			(2.5f + ((float)Math.random() * 7.5f))/10, (5 + ((float)Math.random() * 5))/10);
     }
     
-    private static void log(String msg) {
-    	MoleServ.logger.log(Level.INFO,msg);
-    }
+    private static void log(String msg) { MoleServ.log(msg); }
     
     private static ArrayList<String> getRandomNames(String filename) {
     	ArrayList<String> names = new ArrayList<String>();
