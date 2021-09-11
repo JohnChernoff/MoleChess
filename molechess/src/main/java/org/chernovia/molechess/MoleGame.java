@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Scanner;
 import com.github.bhlangonijr.chesslib.*;
 import com.github.bhlangonijr.chesslib.move.Move;
-import org.chernovia.lib.zugserv.web.WebSockServ;
 
 public class MoleGame implements Runnable {
 	
@@ -93,11 +92,12 @@ public class MoleGame implements Runnable {
 	private long lastActivity;
 	private int minPlayers = 3, maxPlayers = 6;
 	private int turn;
-	private int voteTime = 12, postTime = 300, aiSpeed = 6000;
+	private int moveTime = 12, postTime = 300, preTime = 999;
+	private double calcFactor = .25;
 	private Board board;
 	private Thread gameThread;
 	private int moveNum;
-	private ArrayList<MoveVotes> voteHistory;
+	private ArrayList<MoveVotes> moveHistory;
 	private GAME_PHASE phase = GAME_PHASE.PREGAME;
 	private int voteLimit = 1;
 	private int moleBonus = 100, winBonus = 200;
@@ -110,14 +110,16 @@ public class MoleGame implements Runnable {
 	public MoleGame(MoleUser c, String t, MoleListener l) {
 		creator = c; title = t; playing = false; listener = l;
 		for (int color = COLOR_BLACK; color <= COLOR_WHITE; color++) teams[color] = new MoleTeam(color);
-		voteHistory = new ArrayList<MoveVotes>();
+		moveHistory = new ArrayList<MoveVotes>();
 		lastActivity = System.currentTimeMillis();
 	}
 	
+	public MoleUser getCreator() { return creator; }
 	public String getTitle() { return title; }
 	public int getMaxPlayers() { return maxPlayers; }
-	public void setVoteTime(int t) { voteTime = t; aiSpeed = (voteTime/2) * 1000; }
-	public boolean isDefunct(long timeout) {
+	public void setMoveTime(int t) { moveTime = t; }
+	public boolean isDefunct() { return isDefunct(preTime * 1000); }
+	public boolean isDefunct(int timeout) {
 		return (!playing && ((System.currentTimeMillis() - timeout) > lastActivity));
 	}
 	
@@ -235,7 +237,7 @@ public class MoleGame implements Runnable {
     }
     
     //TODO: fix weird name voting bug
-    public void castVote(MoleUser user, String suspectName) {
+    public void castMoleVote(MoleUser user, String suspectName) {
     	MolePlayer player = getPlayer(user);
     	if (player == null)	{
     		listener.handleAction(user, new MoleResult(false, "Player not found: " + user.name)); 
@@ -255,7 +257,7 @@ public class MoleGame implements Runnable {
         		listener.handleAction(user, new MoleResult(false, "Cannot vote during: " + phase));
         	}
         	else if (p != null) {
-        		 handleVote(player,p);
+        		 handleMoleVote(player,p);
         	} 
         	else {
         		listener.handleAction(user, new MoleResult(false, "Suspect not found"));
@@ -290,7 +292,7 @@ public class MoleGame implements Runnable {
   			spam("Turn #" + moveNum + ": " + colorString(turn));
   			autoPlay(turn);
    			//boolean timeout = 
-   			newPhase(GAME_PHASE.VOTING, voteTime);
+   			newPhase(GAME_PHASE.VOTING, moveTime);
    			if (playing) {
        			Move move;
        			ArrayList<Move> moveList = getMoveVotes(turn);
@@ -305,7 +307,7 @@ public class MoleGame implements Runnable {
        			spam("Selected Move: " + move);
        			if (makeMove(move).result) {
        				if (playing) {
-       					voteHistory.add(getMoveVotes(turn,board.getFen(),move));
+       					moveHistory.add(getMoveVotes(turn,board.getFen(),move));
        			    	spam(MSG_TYPE_MOVELIST,historyToJSON());
                 		clearMoveVotes(turn);
        					turn = getNextTurn();
@@ -321,11 +323,11 @@ public class MoleGame implements Runnable {
     
     private void autoPlay(int turn) {
 		for (MolePlayer player : teams[turn].players) {
-			if (player.ai) player.analyzePosition(board.getFen(), aiSpeed);
+			if (player.ai) player.analyzePosition(board.getFen(),(int)(moveTime * calcFactor) * 1000);
 		}
     }
     
-    private void handleVote(MolePlayer player, MolePlayer p) {
+    private void handleMoleVote(MolePlayer player, MolePlayer p) {
     	player.vote = p;
 		spam(player.user.name + " votes off: " + p.user.name);
 		MolePlayer suspect = checkVote(player.color);
@@ -362,7 +364,7 @@ public class MoleGame implements Runnable {
     private JsonNode historyToJSON() {
     	ObjectNode node = MoleServ.mapper.createObjectNode();
     	ArrayNode historyNode = MoleServ.mapper.createArrayNode();
-    	for (MoveVotes votes : voteHistory) historyNode.add(votes.toJSON());    		
+    	for (MoveVotes votes : moveHistory) historyNode.add(votes.toJSON());    		
     	node.set("history",historyNode);
     	node.put("title",title); //log("Move History: " + node.toPrettyString());
     	return node;
@@ -582,14 +584,15 @@ public class MoleGame implements Runnable {
     	} 
     }
   
-    //private void spam(JsonNode node) { spam(WebSockServ.MSG_SERV, node); }
-    private void spam(String msg) { spam(WebSockServ.MSG_SERV, msg); }
+    private void spam(String msg) { spam("chat", msg); }
     private void spam(String type, String msg) {
     	ObjectNode node = MoleServ.mapper.createObjectNode();
     	node.put("msg", msg);
+    	node.put("source",title);
+    	node.put("player","");
     	spam(type,node);
     }
-    private void spam(String type, JsonNode node) {
+    public void spam(String type, JsonNode node) {
     	try {
     	   	for (int c = 0; c <= 1; c++) {
         		for (MolePlayer player : teams[c].players) {

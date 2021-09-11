@@ -9,7 +9,7 @@ import java.io.OutputStreamWriter;
 /**
  * A simple and efficient client to run Stockfish from Java
  * 
- * @author Rahul A R
+ * @author Rahul A R (with recent additions by John Chernoff)
  * 
  */
 public class StockPlug {
@@ -72,6 +72,7 @@ public class StockPlug {
 	public String getOutput(String keyString, int waitTime) {
 		StringBuffer buffer = new StringBuffer();
 		try {
+			//System.out.println("Sleeping: " + waitTime);
 			Thread.sleep(waitTime);
 			sendCommand("isready");
 			while (true) {
