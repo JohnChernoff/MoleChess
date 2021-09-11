@@ -178,7 +178,7 @@ public class MoleGame implements Runnable {
 			} 
 			spam(player.user.name + " leaves.");
 			listener.handleAction(user, new MoleResult("Left game: " + title));
-			if (deserted()) {
+			if (isDeserted()) {
 				switch(phase) {
 					case PREGAME: listener.finished(this); break;
 					case VOTING: endGame(COLOR_UNKNOWN,"deserted"); break;
@@ -228,7 +228,7 @@ public class MoleGame implements Runnable {
     	else if (player.votedOff) {
     		listener.handleAction(player.user, new MoleResult(false, "Sorry, you've been voted off")); 
     	}
-    	else if (addVote(player,getMove(movestr))) {
+    	else if (addMoveVote(player,getMove(movestr))) {
     		listener.handleAction(player.user, new MoleResult(player.user.name + " votes: " + movestr));
     	}
 		else {
@@ -317,7 +317,7 @@ public class MoleGame implements Runnable {
        			else { spam("WTF: " + move); return; } ////shouldn't occur
    			}
 		}
-    	if (!deserted()) newPhase(GAME_PHASE.POSTGAME,postTime);
+    	if (!isDeserted()) newPhase(GAME_PHASE.POSTGAME,postTime);
     	listener.finished(this);
     }
     
@@ -386,7 +386,7 @@ public class MoleGame implements Runnable {
 		return null;
 	}
   	
-	private boolean deserted() {
+	private boolean isDeserted() {
 		for (int color = 0; color <= 1; color++) {
 			for (MolePlayer player : teams[color].players) {
 				if (!player.away && !player.ai) return false; 
@@ -486,7 +486,7 @@ public class MoleGame implements Runnable {
     	int n = (int)(Math.random() * moves.size()); return moves.get(n);
     }
   
-    private boolean addVote(MolePlayer player, Move move) {
+    private boolean addMoveVote(MolePlayer player, Move move) {
     	if (board.legalMoves().contains(move)) {
     		player.move = move;
     		if (countMoveVotes(player.color) >= activePlayers(turn,true)) gameThread.interrupt();
