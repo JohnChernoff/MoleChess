@@ -1,17 +1,17 @@
 package org.chernovia.molechess;
 
 public class MoleResult {
-  boolean result;
+  boolean success;
   
   String message;
   
   public MoleResult(String s) {
-    this.result = true;
+    this.success = true;
     this.message = s;
   }
   
   public MoleResult(boolean b, String s) {
-    this.result = b;
+    this.success = b;
     this.message = s;
   }
 }

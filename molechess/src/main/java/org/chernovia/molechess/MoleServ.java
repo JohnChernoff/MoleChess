@@ -92,7 +92,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		try {
 			ArrayNode gameObj = mapper.createArrayNode();
 			for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
-				gameObj.add(((MoleGame)entry.getValue()).toJSON()); 
+				gameObj.add(((MoleGame)entry.getValue()).toJSON(false)); 
 			}
 			return gameObj;
 		}
@@ -307,16 +307,12 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	}
 
 	@Override
-	public void handleAction(MoleUser user, MoleResult action) {
+	public void notify(MoleUser user, MoleResult action, boolean update) {
 		if (user != null) {
-			if (action.result) {
-				user.tell(action.message);
-				updateAll();
-			} 
-			else {
-				user.tell(WebSockServ.MSG_ERR, action.message);
-			} 
+			if (action.success) user.tell(action.message);
+			else user.tell(WebSockServ.MSG_ERR, action.message);
 		}
+		if (update) updateAll(); //TODO: distinguish between game and server-wide updates
 	}
 	
 	@Override
