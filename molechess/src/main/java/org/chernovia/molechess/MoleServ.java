@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
 import org.chernovia.lib.lichess.LichessSDK;
 import org.chernovia.lib.zugserv.*;
 import org.chernovia.lib.zugserv.web.*;
+import org.chernovia.utils.CommandLineParser;
 
 //TODO: how do I export to pgn?
 //molevote bug
@@ -45,13 +46,30 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	public static void log(Level level, String msg) { 
 		logger.log(level,msg + " (" + LocalDateTime.now() + ")"); 
 	}
-	
-	//TODO: non-kludgy command line options
+
 	public static void main(String[] args) {
-		DEF_MOVE_TIME = Integer.parseInt(args[0]);
-		STOCK_PATH = args[1];
-		TESTING = (args.length > 2 && args[2].equalsIgnoreCase("test")); 
-		new MoleServ(5555).start();;
+		CommandLineParser parser = new CommandLineParser(args);
+		String[] path = parser.getArgumentValue("stockpath");  
+		if (path != null) STOCK_PATH = path[0]; 
+		log("Stock Path: " + STOCK_PATH);
+		String[] movetime = parser.getArgumentValue("movetime"); 
+		if (movetime != null) DEF_MOVE_TIME = Integer.parseInt(movetime[0]); 
+		log("Move Time: " + DEF_MOVE_TIME);
+		TESTING = parser.getFlag("testing"); 
+		log("Testing: " + TESTING);
+		new MoleServ(5555).start();
+	}
+	
+	static public String getStringArg(String arg, String def) {
+		String prop = System.getProperty(arg);
+		if (prop == null) return def; else return prop;
+	}
+	
+	static public int getIntArg(String arg, int def) {
+		String prop = System.getProperty(arg);
+		if (prop == null) return def; 
+		else try { return Integer.parseInt(prop); } 
+		catch (NumberFormatException oops) { return def; }
 	}
 	
 	public MoleServ(int port) {
