@@ -7,6 +7,7 @@ import java.awt.Color;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.ConcurrentModificationException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Scanner;
 import com.github.bhlangonijr.chesslib.*;
@@ -566,15 +567,22 @@ public class MoleGame implements Runnable {
 		spam("game_update",node); 
     }
   
-    private MolePlayer checkVote(int color) {
-       	MolePlayer suspect = null;
+    private MolePlayer checkVote(int color) { //log("Checking vote...");
+       	HashMap<MolePlayer,Integer> voteMap = new HashMap<MolePlayer,Integer>();
     	for (MolePlayer p : teams[color].players) {
-    		if (p.isInteractive()) {
-    			if (suspect == null) suspect = p.vote;
-    			else if (p != suspect && suspect != p.vote) return null;
+    		if (p.vote != null) {
+    			if (voteMap.containsKey(p.vote)) voteMap.put(p.vote,voteMap.get(p.vote)+1);
+    			else voteMap.put(p.vote,1);
     		}
     	}
-    	return suspect;
+    	int quorum =  activePlayers(color,true)-1; //log("Quorum: " + quorum);
+    	for (MolePlayer p : teams[color].players) {
+    		if (voteMap.containsKey(p)) {
+        		Integer votes = voteMap.get(p);	//log("Votes for " + p.user.name + ": " + votes.intValue());
+        		if (votes.intValue() >= quorum) return p;
+    		}
+    	}
+    	return null;
     }
     
     private boolean resigning(int color) {

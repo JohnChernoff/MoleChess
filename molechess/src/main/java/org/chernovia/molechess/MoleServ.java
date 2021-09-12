@@ -21,8 +21,8 @@ import org.chernovia.lib.zugserv.web.*;
 import org.chernovia.utils.CommandLineParser;
 
 //TODO: how do I export to pgn?
-//molevote bug
 //stockplug M1 blindness
+//~molevote bug
 //~game specific chat
 //~limit number of games a user may create
 //~how do I spectate that game?
