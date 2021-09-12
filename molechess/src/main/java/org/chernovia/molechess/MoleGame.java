@@ -528,12 +528,13 @@ public class MoleGame implements Runnable {
     }
     
     private Move getMove(String movestr) {
-    	try {
-        	return new Move(movestr,turn == COLOR_BLACK ? Side.BLACK : Side.WHITE);
-    	}
-    	catch (IllegalArgumentException oops) { 
-    		log(oops.getMessage()); return null;
-    	}
+        try {
+            final String sanitizedMovestr = movestr.replace("\n", "").replace("\r", "");
+            return new Move(sanitizedMovestr,turn == COLOR_BLACK ? Side.BLACK : Side.WHITE);
+        }
+        catch (IllegalArgumentException oops) {
+            log(oops.getMessage()); return null;
+        }
     }
   
     private MoleResult makeMove(Move move) {
