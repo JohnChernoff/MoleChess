@@ -5,11 +5,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.awt.Color;
 import java.io.FileNotFoundException;
-import java.util.ArrayList;
-import java.util.ConcurrentModificationException;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Scanner;
+import java.util.*;
+
 import com.github.bhlangonijr.chesslib.*;
 import com.github.bhlangonijr.chesslib.move.Move;
 
@@ -79,7 +76,7 @@ public class MoleGame implements Runnable {
 		}
 	}
 	
-	public static ArrayList<String> MOLE_NAMES = getRandomNames("resources/molenames.txt");
+	public static List<String> MOLE_NAMES = getRandomNames("molenames.txt");
 	public static final String MSG_TYPE_MOVELIST = "movelist";
 	public static final int COLOR_UNKNOWN = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
 	public enum GAME_RESULT { ONGOING, DRAW, CHECKMATE, STALEMATE, ABANDONED };
@@ -636,18 +633,21 @@ public class MoleGame implements Runnable {
     
     private static void log(String msg) { MoleServ.log(msg); }
     
-    private static ArrayList<String> getRandomNames(String filename) {
-    	ArrayList<String> names = new ArrayList<String>();
-    	java.io.File file = new java.io.File(filename);
-    	Scanner scanner;
+    private static List<String> getRandomNames(final String filename) {
+		List<String> names = new ArrayList<>();
 		try {
-			scanner = new Scanner(file);
-	    	while (scanner.hasNextLine()) names.add(scanner.nextLine());
-	    	scanner.close();
-		} 
-		catch (FileNotFoundException e) { log(e.getMessage()); }
-		log("Names: " + names.size());
-    	return names;
-    }
+			java.io.File file = new java.io.File(MoleGame.class.getClassLoader().getResource(filename).toURI());
+			Scanner scanner = new Scanner(file);
+			while (scanner.hasNextLine()) names.add(scanner.nextLine());
+			scanner.close();
+			return names;
+		} catch (Exception e) {
+			e.printStackTrace();
+			names = Arrays.asList("Steinitz", "Lasker", "Capablanca", "Karpov", "Kasparov");
+			return names;
+		} finally {
+			log("Names: " + names.size());
+		}
+	}
 
 }
