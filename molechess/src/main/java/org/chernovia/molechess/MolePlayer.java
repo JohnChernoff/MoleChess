@@ -44,7 +44,7 @@ public class MolePlayer implements StockListener {
   }
   
   public JsonNode toJSON() {
-    ObjectNode obj = MoleServ.mapper.createObjectNode();
+    ObjectNode obj = MoleServ.OBJ_MAPPER.createObjectNode();
     obj.put("score", score);
     obj.put("game_col", color);
     obj.put("play_col", rgbToHex(guiColor.getRed(),guiColor.getGreen(),guiColor.getBlue()));

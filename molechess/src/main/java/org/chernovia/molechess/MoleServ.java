@@ -7,11 +7,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.io.FileNotFoundException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.ConcurrentModificationException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
@@ -30,52 +34,48 @@ import org.chernovia.utils.CommandLineParser;
 //~handle logins with same token
 //
 public class MoleServ extends Thread implements ConnListener, MoleListener {
-	static final ObjectMapper mapper = new ObjectMapper();
-	static final Logger logger = Logger.getLogger("MoleLog");
-	static Pattern alphanumericPattern = Pattern.compile("^[a-zA-Z0-9]*$");
-	static int MAX_STR_LEN = 30, MAX_USER_GAMES = 3, DEF_MOVE_TIME = 12;
-	static boolean TESTING = false;
-	static String STOCK_PATH = "stockfish/stockfish";
+	static final String VERSION = "0.1"; 
+	static final ObjectMapper OBJ_MAPPER = new ObjectMapper();
+	static final Logger LOGGER = Logger.getLogger("MoleLog");
+	static final Pattern ALPHANUMERIC_PATTERN = Pattern.compile("^[a-zA-Z0-9]*$");
+	static final int MAX_STR_LEN = 30;
+	static String StockPath = "stockfish/stockfish";
+	static int maxUserGames = 3, defMoveTime = 12;
+	static boolean testing = false;
 	private ArrayList<MoleUser> users = new ArrayList<>();
 	private HashMap<String, MoleGame> games = new HashMap<>();
 	private ZugServ serv;
 	private int purgeFreq = 30;
-	boolean running = false;
+	private long startTime; 
+	private boolean running = false;
 	
-	public static void log(String msg) { log(Level.INFO,msg);	}
-	public static void log(Level level, String msg) { 
-		logger.log(level,msg + " (" + LocalDateTime.now() + ")"); 
-	}
-
-	public static void main(String[] args) {
+	public static void main(String[] args) { //MoleGame.getRandomNames("resources/molenames.txt");
 		CommandLineParser parser = new CommandLineParser(args);
 		String[] path = parser.getArgumentValue("stockpath");  
-		if (path != null) STOCK_PATH = path[0]; 
-		log("Stock Path: " + STOCK_PATH);
+		if (path != null) StockPath = path[0]; 
+		log("Stock Path: " + StockPath);
 		String[] movetime = parser.getArgumentValue("movetime"); 
-		if (movetime != null) DEF_MOVE_TIME = Integer.parseInt(movetime[0]); 
-		log("Move Time: " + DEF_MOVE_TIME);
-		TESTING = parser.getFlag("testing"); 
-		log("Testing: " + TESTING);
+		if (movetime != null) defMoveTime = Integer.parseInt(movetime[0]); 
+		log("Move Time: " + defMoveTime);
+		testing = parser.getFlag("testing"); 
+		log("Testing: " + testing);
 		new MoleServ(5555).start();
-	}
-	
-	static public String getStringArg(String arg, String def) {
-		String prop = System.getProperty(arg);
-		if (prop == null) return def; else return prop;
-	}
-	
-	static public int getIntArg(String arg, int def) {
-		String prop = System.getProperty(arg);
-		if (prop == null) return def; 
-		else try { return Integer.parseInt(prop); } 
-		catch (NumberFormatException oops) { return def; }
 	}
 	
 	public MoleServ(int port) {
 		log("Constructing MoleServ on port: " + port);
 		serv = (ZugServ)new WebSockServ(port, this);
 		serv.startSrv();
+		startTime = System.currentTimeMillis();
+	}
+	
+	public JsonNode toJSON() {
+		ObjectNode node = OBJ_MAPPER.createObjectNode();
+		node.put("Uptime: ", (System.currentTimeMillis() - startTime)/1000);
+		ArrayNode usersNode = OBJ_MAPPER.createArrayNode();
+		for (MoleUser user : users) usersNode.add(user.toJSON());
+		node.set("users",usersNode);
+		return node;
 	}
 	
 	private MoleUser getUserByToken(String token) {
@@ -90,7 +90,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	
 	private ArrayNode getAllGames() {
 		try {
-			ArrayNode gameObj = mapper.createArrayNode();
+			ArrayNode gameObj = OBJ_MAPPER.createArrayNode();
 			for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
 				gameObj.add(((MoleGame)entry.getValue()).toJSON(false)); 
 			}
@@ -104,7 +104,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	private boolean validString(String str) {
 		boolean valid = false;
 		if (str.length() > 0 && str.length() < MAX_STR_LEN) {
-			if (alphanumericPattern.matcher(str.trim()).find()) valid = true;
+			if (ALPHANUMERIC_PATTERN.matcher(str.trim()).find()) valid = true;
 		}
 		return valid; 
 	}
@@ -122,12 +122,12 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			if (games.containsKey(title)) {
 				creator.tell(WebSockServ.MSG_ERR, "Failed to create game: title already exists");
 			}
-			else if (countGames(creator) > MoleServ.MAX_USER_GAMES) {
+			else if (countGames(creator) > MoleServ.maxUserGames) {
 				creator.tell(WebSockServ.MSG_ERR, 
-						"Failed to create game: too many games (" + MoleServ.MAX_USER_GAMES + ")");
+						"Failed to create game: too many games (" + MoleServ.maxUserGames + ")");
 			}
 			else {
-				MoleGame game = new MoleGame(creator, title, this); game.setMoveTime(DEF_MOVE_TIME);
+				MoleGame game = new MoleGame(creator, title, this); game.setMoveTime(defMoveTime);
 				games.put(title, game);
 				updateAll();
 			}
@@ -140,14 +140,14 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	public void newMsg(Connection conn, int channel, String msg) { //log("NewMsg: " + msg);
 		try {
 			MoleUser user = getUser(conn);
-			JsonNode msgNode = mapper.readTree(msg);
+			JsonNode msgNode = OBJ_MAPPER.readTree(msg);
 			JsonNode typeNode = msgNode.get("type"), dataNode = msgNode.get("data");
 			if (typeNode == null || dataNode == null) {
 				conn.tell(WebSockServ.MSG_ERR, "Error: Bad Data(null)"); return;
 			}
 			String typeTxt = typeNode.asText(), dataTxt = dataNode.asText();
 			if (typeTxt.equals("login")) {
-				handleLogin(conn,dataTxt,MoleServ.TESTING);
+				handleLogin(conn,dataTxt,MoleServ.testing);
 			} 
 			else if (user == null) {
 				conn.tell(WebSockServ.MSG_ERR, "Please log in");
@@ -221,7 +221,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 				}
 			}
 			else if (typeTxt.equals("chat")) {
-				ObjectNode node = mapper.createObjectNode();
+				ObjectNode node = OBJ_MAPPER.createObjectNode();
 				node.put("player", user.name);
 				JsonNode chatNode = dataNode.get("msg"); JsonNode sourceNode = dataNode.get("source");
 				if (msgNode != null && sourceNode != null) {
@@ -232,6 +232,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 				}
 				else { user.tell(WebSockServ.MSG_ERR, "Bad chat"); }
 			} 
+			else if (typeTxt.equals("cmd")) {
+				handleCmd(user,dataNode);
+			}
 			else {
 				user.tell(WebSockServ.MSG_ERR, "Unknown command");
 			} 
@@ -247,14 +250,28 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			if (game.getTitle().equals(title)) game.spam("chat",node);
 		}
 	}
+	
+	private void handleCmd(MoleUser user, JsonNode cmdNode) {
+		JsonNode cmd = cmdNode.get("cmd");
+		if (cmd.isNull()) {
+			user.tell(WebSockServ.MSG_ERR,"Error: null command");
+		}		
+		else switch (cmdNode.get("cmd").asText()) {
+			case "info":
+				user.tell("info",this.toJSON()); break;
+			case "who":
+				user.tell("users",this.toJSON()); break;
+			case "uptime":
+				user.tell(WebSockServ.MSG_SERV,
+						"Uptime: " + ((System.currentTimeMillis() - startTime) / 1000)); break;
+			default: user.tell(WebSockServ.MSG_ERR,"Error: command not found");
+		}
+	}
   	
-  	public void spam(String type, String msg) {
-  		ObjectNode node = mapper.createObjectNode();
-  		node.put("msg", msg);
-  		spam(type, node);
-  	}
-  
-  	public void spam(String type, JsonNode node) {
+  	//private void spam(String type, String msg) {
+  	//	ObjectNode node = mapper.createObjectNode(); node.put("msg", msg); spam(type, node);
+  	//}
+  	private void spam(String type, JsonNode node) {
   		for (MoleUser user : this.users) user.tell(type, node); 
   	}
   	
@@ -316,8 +333,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	}
 	
 	@Override
-	public void started(MoleGame game) {		
+	public void started(MoleGame game) {
+		updateAll();
 	}
+	
 
 	@Override
 	public void finished(MoleGame game) {
@@ -362,5 +381,27 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		}
 		serv.stopSrv();
 		log("Finished main MoleServ loop");
+	}
+	
+	public static void log(String msg) { log(Level.INFO,msg);	}
+	public static void log(Level level, String msg) { 
+		LOGGER.log(level,msg + " (" + LocalDateTime.now() + ")"); 
+	}
+	
+    public static List<String> loadRandomNames(final String filename) {
+		List<String> names = new ArrayList<>();
+		try {
+			java.io.File file = new java.io.File(filename);
+			Scanner scanner = new Scanner(file);
+			while (scanner.hasNextLine()) names.add(scanner.nextLine());
+			scanner.close();
+			return names;
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+			names = Arrays.asList("Steinitz", "Lasker", "Capablanca", "Karpov", "Kasparov");
+			return names;
+		} finally {
+			log("Names: " + names.size());
+		}
 	}
 }

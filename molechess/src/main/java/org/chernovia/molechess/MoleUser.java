@@ -27,7 +27,7 @@ public class MoleUser {
   }
   
   public void tell(String type, String msg) {
-    ObjectNode node = MoleServ.mapper.createObjectNode();
+    ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
     node.put("msg", msg);
     tell(type, (JsonNode)node);
   }
@@ -38,7 +38,7 @@ public class MoleUser {
   }
   
   public JsonNode toJSON() {
-    ObjectNode obj = MoleServ.mapper.createObjectNode();
+    ObjectNode obj = MoleServ.OBJ_MAPPER.createObjectNode();
     obj.put("name", this.name);
     return (JsonNode)obj;
   }

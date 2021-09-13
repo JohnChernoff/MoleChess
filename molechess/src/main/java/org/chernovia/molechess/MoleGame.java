@@ -4,9 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.awt.Color;
-import java.io.FileNotFoundException;
 import java.util.*;
-
 import com.github.bhlangonijr.chesslib.*;
 import com.github.bhlangonijr.chesslib.move.Move;
 
@@ -21,9 +19,9 @@ public class MoleGame implements Runnable {
 			return (player.user.name + ": " + move);
 		}
 		public JsonNode toJSON() {
-			ObjectNode node = MoleServ.mapper.createObjectNode();
+			ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
 			node.set("player", player != null ? player.toJSON() : null);
-			ObjectNode moveNode = MoleServ.mapper.createObjectNode();
+			ObjectNode moveNode = MoleServ.OBJ_MAPPER.createObjectNode();
 			moveNode.put("from", move.getFrom().value());
 			moveNode.put("to", move.getTo().value());
 			node.set("move", moveNode);
@@ -46,11 +44,11 @@ public class MoleGame implements Runnable {
 			}
 		}
 		public JsonNode toJSON() {
-			ObjectNode node = MoleServ.mapper.createObjectNode();
-			ArrayNode altsArray = MoleServ.mapper.createArrayNode();
+			ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+			ArrayNode altsArray = MoleServ.OBJ_MAPPER.createArrayNode();
 			for (MoveVote alt : alts) altsArray.add(alt.toJSON());
 			node.set("alts",altsArray);
-			ArrayNode selectedArray = MoleServ.mapper.createArrayNode();
+			ArrayNode selectedArray = MoleServ.OBJ_MAPPER.createArrayNode();
 			for (MoveVote selectedMove : selected) selectedArray.add(selectedMove.toJSON());
 			node.set("selected", selectedArray);
 			node.put("fen", fen);
@@ -67,8 +65,8 @@ public class MoleGame implements Runnable {
 			players = new ArrayList<MolePlayer>(); votes = 0; color = c;
 		}
 		public JsonNode toJSON() {
-			ObjectNode node = MoleServ.mapper.createObjectNode();
-	    	ArrayNode playerArray = MoleServ.mapper.createArrayNode();
+			ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+	    	ArrayNode playerArray = MoleServ.OBJ_MAPPER.createArrayNode();
     		for (MolePlayer player : players) playerArray.add(player.toJSON());
     		node.set("players", playerArray);
     		node.put("votes", votes);
@@ -76,7 +74,7 @@ public class MoleGame implements Runnable {
 		}
 	}
 	
-	public static List<String> MOLE_NAMES = getRandomNames("molenames.txt");
+	public static List<String> MOLE_NAMES = MoleServ.loadRandomNames("resources/molenames.txt");
 	public static final String MSG_TYPE_MOVELIST = "movelist";
 	public static final int COLOR_UNKNOWN = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
 	public enum GAME_RESULT { ONGOING, DRAW, CHECKMATE, STALEMATE, ABANDONED };
@@ -131,8 +129,8 @@ public class MoleGame implements Runnable {
 	}
 	
     public JsonNode toJSON(boolean history) {
-    	ObjectNode obj = MoleServ.mapper.createObjectNode();
-    	ArrayNode teamArray = MoleServ.mapper.createArrayNode();
+    	ObjectNode obj = MoleServ.OBJ_MAPPER.createObjectNode();
+    	ArrayNode teamArray = MoleServ.OBJ_MAPPER.createArrayNode();
     	for (int c = COLOR_BLACK; c <= COLOR_WHITE; c++) teamArray.add(teams[c].toJSON()); 
     	obj.set("teams", teamArray);
     	obj.put("title", title);
@@ -373,8 +371,8 @@ public class MoleGame implements Runnable {
     }
     
     private JsonNode historyToJSON() {
-    	ObjectNode node = MoleServ.mapper.createObjectNode();
-    	ArrayNode historyNode = MoleServ.mapper.createArrayNode();
+    	ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+    	ArrayNode historyNode = MoleServ.OBJ_MAPPER.createArrayNode();
     	for (MoveVotes votes : moveHistory) historyNode.add(votes.toJSON());    		
     	node.set("history",historyNode);
     	node.put("title",title); //log("Move History: " + node.toPrettyString());
@@ -558,7 +556,7 @@ public class MoleGame implements Runnable {
     }
     
     private void spamMove(Move move) {
-		ObjectNode node = MoleServ.mapper.createObjectNode();
+		ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
 		node.put("lm",move == null ? "" : move.toString());
 		node.put("fen",board.getFen());
 		spam("game_update",node); 
@@ -605,7 +603,7 @@ public class MoleGame implements Runnable {
   
     private void spam(String msg) { spam("chat", msg); }
     private void spam(String type, String msg) {
-    	ObjectNode node = MoleServ.mapper.createObjectNode();
+    	ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
     	node.put("msg", msg);
     	node.put("source",title);
     	node.put("player","");
@@ -633,21 +631,4 @@ public class MoleGame implements Runnable {
     
     private static void log(String msg) { MoleServ.log(msg); }
     
-    private static List<String> getRandomNames(final String filename) {
-		List<String> names = new ArrayList<>();
-		try {
-			java.io.File file = new java.io.File(MoleGame.class.getClassLoader().getResource(filename).toURI());
-			Scanner scanner = new Scanner(file);
-			while (scanner.hasNextLine()) names.add(scanner.nextLine());
-			scanner.close();
-			return names;
-		} catch (Exception e) {
-			e.printStackTrace();
-			names = Arrays.asList("Steinitz", "Lasker", "Capablanca", "Karpov", "Kasparov");
-			return names;
-		} finally {
-			log("Names: " + names.size());
-		}
-	}
-
 }

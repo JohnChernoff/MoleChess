@@ -14,7 +14,7 @@ public class StockThread extends Thread {
 	}
 	
 	public void run() {
-		stockfish.startEngine(MoleServ.STOCK_PATH);
+		stockfish.startEngine(MoleServ.StockPath);
 		stockfish.setOptions(1,25,elo);
 		String move = stockfish.getBestMove(fen, moveTime);
 		listener.newStockMove(move); //System.out.println("New Move: " + move);
