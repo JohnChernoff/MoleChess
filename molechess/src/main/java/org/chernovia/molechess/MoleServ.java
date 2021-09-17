@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.FileNotFoundException;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,7 +27,9 @@ import org.chernovia.lib.zugserv.web.*;
 import org.chernovia.utils.CommandLineParser;
 
 //TODO: how do I export to pgn?
-//stockplug M1 blindness
+//handle draws
+//~stockplug M1 blindness
+//~database
 //~molevote bug
 //~game specific chat
 //~limit number of games a user may create
@@ -39,34 +43,103 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	static final Logger LOGGER = Logger.getLogger("MoleLog");
 	static final Pattern ALPHANUMERIC_PATTERN = Pattern.compile("^[a-zA-Z0-9]*$");
 	static final int MAX_STR_LEN = 30;
-	static String StockPath = "stockfish/stockfish";
-	static int maxUserGames = 3, defMoveTime = 12;
-	static boolean testing = false;
+	static String STOCK_PATH = "stockfish/stockfish";
+	static int STOCK_STRENGTH = 2000, STOCK_MOLE_STRENGTH = 1500;
 	private ArrayList<MoleUser> users = new ArrayList<>();
 	private HashMap<String, MoleGame> games = new HashMap<>();
 	private ZugServ serv;
-	private int purgeFreq = 30;
+	private int purgeFreq = 30, maxUserGames = 3, defMoveTime = 12;
 	private long startTime; 
 	private boolean running = false;
+	private boolean testing = false;
+	private MoleBase moleBase;
 	
 	public static void main(String[] args) { //MoleGame.getRandomNames("resources/molenames.txt");
+		new MoleServ(5555,args).start();
+	}
+	
+	public MoleServ(int port, String[] args) {
 		CommandLineParser parser = new CommandLineParser(args);
 		String[] path = parser.getArgumentValue("stockpath");  
-		if (path != null) StockPath = path[0]; 
-		log("Stock Path: " + StockPath);
+		if (path != null) STOCK_PATH = path[0]; 
+		log("Stock Path: " + STOCK_PATH);
 		String[] movetime = parser.getArgumentValue("movetime"); 
 		if (movetime != null) defMoveTime = Integer.parseInt(movetime[0]); 
 		log("Move Time: " + defMoveTime);
 		testing = parser.getFlag("testing"); 
 		log("Testing: " + testing);
-		new MoleServ(5555).start();
-	}
-	
-	public MoleServ(int port) {
 		log("Constructing MoleServ on port: " + port);
 		serv = (ZugServ)new WebSockServ(port, this);
 		serv.startSrv();
 		startTime = System.currentTimeMillis();
+		moleBase = new MoleBase("localhost:3306","zugmole",parser.getArgumentValue("dbpass")[0],"molechess");
+	}
+	
+	private void addUserData(MoleUser user) {
+		MoleBase.MoleQuery query = moleBase.makeQuery(
+			"INSERT INTO `players` (`Name`, `Wins`, `Losses`, `Rating`, `DateCreated`, `About`) " + 
+			"VALUES ('" + user.name + "', '0', '0', '1600', CURRENT_TIMESTAMP, '')");
+		query.runUpdate(); //("Insert Result: " + query.runUpdate());
+	}
+	
+	private MoleUser.MoleData refreshUserData(MoleUser user) {
+		if (user.getConn() == null) return null;
+		MoleBase.MoleQuery query = moleBase.makeQuery(
+				"SELECT * FROM `players` WHERE Name='" + user.name + "'");
+		ResultSet rs = query.runQuery(); 
+		if (rs != null) {
+			try {
+				rs.next();
+				user.setData(
+					rs.getInt("Wins"),rs.getInt("Losses"),rs.getInt("Rating"),rs.getString("About"));
+				query.cleanup(); return user.getData();
+				
+			}
+			catch (SQLException doh) { log(Level.SEVERE,doh.getMessage()); }
+		}
+		query.cleanup(); return null;
+	}
+	
+	public void updateUserData(ArrayList<MolePlayer> winners, ArrayList<MolePlayer> losers) {
+		for (MolePlayer p : winners) refreshUserData(p.user);
+		for (MolePlayer p : losers) refreshUserData(p.user);
+		int ratingGain = 16 - (int)((calcAvgRating(winners) - calcAvgRating(losers)) * .04);
+		if (ratingGain > 32) ratingGain = 32; else if (ratingGain < 0) ratingGain = 0;
+		for (MolePlayer p : winners) {
+			if (!p.ai) updateUserRating(p.user,p.user.getData().rating + 
+			(p.role == MolePlayer.ROLE.MOLE ? -ratingGain : ratingGain),true);
+		}
+		for (MolePlayer p : losers) {
+			if (!p.ai) updateUserRating(p.user,p.user.getData().rating - 
+			(p.role == MolePlayer.ROLE.MOLE ? -ratingGain : ratingGain),false);
+		}
+	}
+	
+	private int calcAvgRating(ArrayList<MolePlayer> team) {
+		int total = 0; for (MolePlayer p : team) {
+			int rating = p.ai ? 
+			(p.role == MolePlayer.ROLE.MOLE ? MoleServ.STOCK_MOLE_STRENGTH : MoleServ.STOCK_STRENGTH) : 
+			p.user.getData().rating; 
+			total += rating; 
+		}
+		return Math.round(total/team.size());
+	}
+	
+	//TODO: draws
+	private void updateUserRating(MoleUser user, int newRating, boolean winner) {
+		MoleBase.MoleQuery query = moleBase.makeQuery(
+			"UPDATE `players` SET Rating='" + newRating + "' WHERE Name='" + user.name + "'");
+		query.runUpdate();
+		if (winner) {
+			query.setQueryString("UPDATE `players` SET Wins='" + (user.getData().wins + 1) + 
+			"' WHERE Name='" + user.name + "'");
+			query.runUpdate();
+		}
+		else {
+			query.setQueryString("UPDATE `players` SET Losses='" + (user.getData().losses + 1) + 
+			"' WHERE Name='" + user.name + "'");
+			query.runUpdate();
+		}
 	}
 	
 	public JsonNode toJSON() {
@@ -122,9 +195,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			if (games.containsKey(title)) {
 				creator.tell(WebSockServ.MSG_ERR, "Failed to create game: title already exists");
 			}
-			else if (countGames(creator) > MoleServ.maxUserGames) {
+			else if (countGames(creator) > maxUserGames) {
 				creator.tell(WebSockServ.MSG_ERR, 
-						"Failed to create game: too many games (" + MoleServ.maxUserGames + ")");
+						"Failed to create game: too many games (" + maxUserGames + ")");
 			}
 			else {
 				MoleGame game = new MoleGame(creator, title, this); game.setMoveTime(defMoveTime);
@@ -147,7 +220,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			}
 			String typeTxt = typeNode.asText(), dataTxt = dataNode.asText();
 			if (typeTxt.equals("login")) {
-				handleLogin(conn,dataTxt,MoleServ.testing);
+				handleLogin(conn,dataTxt,testing);
 			} 
 			else if (user == null) {
 				conn.tell(WebSockServ.MSG_ERR, "Please log in");
@@ -264,6 +337,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			case "uptime":
 				user.tell(WebSockServ.MSG_SERV,
 						"Uptime: " + ((System.currentTimeMillis() - startTime) / 1000)); break;
+			case "finger":
+				user.tell(WebSockServ.MSG_SERV,refreshUserData(user).toString());
 			default: user.tell(WebSockServ.MSG_ERR,"Error: command not found");
 		}
 	}
@@ -314,13 +389,18 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 				JsonNode username = accountData.get("username");
 				if (username != null) {
 					MoleUser newUser = new MoleUser(conn, token, username.asText());
-					users.add(newUser);
+					addUser(newUser);
 					newUser.tell(WebSockServ.MSG_LOG_SUCCESS, "Login Successful: Welcome!");
 					updateUser(newUser);
 				}
 				else conn.tell(WebSockServ.MSG_ERR, "Login Error: weird Lichess API result");
 			}
 		}
+	}
+	
+	private void addUser(MoleUser user) {
+		users.add(user);
+		addUserData(user);
 	}
 
 	@Override

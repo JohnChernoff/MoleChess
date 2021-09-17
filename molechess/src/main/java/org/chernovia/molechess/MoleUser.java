@@ -8,12 +8,29 @@ public class MoleUser {
   String oauth;
   String name;
   private Connection conn;
+  private MoleData data;
+  
+  public class MoleData {
+	  String about;
+	  int wins, losses, rating;
+	  public MoleData(int wins, int losses, int rating, String about) {
+		  this.wins = wins; this.losses = losses; this.rating = rating; this.about = about; 
+	  }
+	  public String toString() {
+		  return "Wins: " + wins + ", Losses: " + losses + ", Rating: " + rating; 
+	  }
+  }
   
   public MoleUser(Connection c, String o, String n) {
     this.conn = c;
     this.oauth = o;
     this.name = n;
   }
+  
+  public MoleData setData(int wins, int losses, int rating, String about) {
+	  data = new MoleData(wins,losses,rating,about); return data;
+  }
+  public MoleData getData() { return data; }
   
   public boolean sameConnection(Connection c) {
     return (this.conn == c);

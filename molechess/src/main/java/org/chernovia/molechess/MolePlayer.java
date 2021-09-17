@@ -7,15 +7,6 @@ import com.github.bhlangonijr.chesslib.move.Move;
 
 public class MolePlayer implements StockListener {
 	
-    static final Color[] PLAY_COLS = {
-    		new Color(200,255,255), new Color(255,255,200), new Color(255,200,255),
-    		new Color(255,255,128), new Color(255,255,32), new Color(255,32,255),
-    		new Color(255,128,255), new Color(128,255,200), new Color(128,200,255),
-    		new Color(255,128,128), new Color(128,255,32), new Color(128,32,255)
-    		//Color.WHITE, Color.BLUE, Color.RED, Color.GREEN, Color.MAGENTA, Color.ORANGE,
-    		//Color.YELLOW, Color.CYAN, Color.PINK, 
-    		//new Color(200,128,192), new Color(128,192,200), new Color(192,200,128) 
-    };
    	enum ROLE { MOLE, PLAYER };
 	MoleGame game;
   	MoleUser user;
@@ -23,6 +14,7 @@ public class MolePlayer implements StockListener {
   	boolean votedOff = false;
   	boolean ai = false;
   	boolean resigning = false;
+  	int rating;
     int score;
     int color;
     Move move = null;
@@ -58,7 +50,8 @@ public class MolePlayer implements StockListener {
   }
   
   public void analyzePosition(String fen, int t) {
-	  new StockThread(this,fen,t,role == ROLE.PLAYER ? 2200 : 1600).start();
+	  new StockThread(this,MoleServ.STOCK_PATH,fen,t,
+		  role == ROLE.PLAYER ? MoleServ.STOCK_STRENGTH : MoleServ.STOCK_MOLE_STRENGTH).start();
   }
 
   @Override

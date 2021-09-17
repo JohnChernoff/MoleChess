@@ -59,17 +59,16 @@ public class MoleGame implements Runnable {
 	
 	class MoleTeam {
 		ArrayList<MolePlayer> players;
-		int votes;
-		int color;
+		int voteCount; //int color;
 		public MoleTeam(int c) {
-			players = new ArrayList<MolePlayer>(); votes = 0; color = c;
+			players = new ArrayList<MolePlayer>(); voteCount = 0; //color = c;
 		}
 		public JsonNode toJSON() {
 			ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
 	    	ArrayNode playerArray = MoleServ.OBJ_MAPPER.createArrayNode();
     		for (MolePlayer player : players) playerArray.add(player.toJSON());
     		node.set("players", playerArray);
-    		node.put("votes", votes);
+    		node.put("vote_count", voteCount);
     		return node;
 		}
 	}
@@ -254,7 +253,7 @@ public class MoleGame implements Runnable {
     	else if (!playing) {
     		notify(user, new MoleResult(false, "Game not currently running")); 
     	}
-    	else if (teams[player.color].votes >= voteLimit) {
+    	else if (teams[player.color].voteCount >= voteLimit) {
     		notify(user, new MoleResult(false, "No more voting!")); 
     	}
     	else if (player.votedOff) {
@@ -315,9 +314,9 @@ public class MoleGame implements Runnable {
        			}
        			spam("Selected Move: " + move);
        			if (makeMove(move).success) {
+   					moveHistory.add(getMoveVotes(turn,board.getFen(),move));
+   			    	spam(MSG_TYPE_MOVELIST,historyToJSON());
        				if (playing) {
-       					moveHistory.add(getMoveVotes(turn,board.getFen(),move));
-       			    	spam(MSG_TYPE_MOVELIST,historyToJSON());
                 		clearMoveVotes(turn);
        					turn = getNextTurn();
                 		moveNum++;
@@ -360,13 +359,13 @@ public class MoleGame implements Runnable {
 				listener.updateAll();
 			}
 			else suspect.votedOff = true;
-			teams[player.color].votes++;
+			teams[player.color].voteCount++;
 			if (endOnAccusation) {
 				endGame(COLOR_UNKNOWN,"Mole vote");
 			}
 			else if (endOnMutualAccusation && 
-				teams[COLOR_BLACK].votes > 0 && 
-				teams[COLOR_WHITE].votes > 0) endGame(COLOR_UNKNOWN,"mutual mole vote");
+				teams[COLOR_BLACK].voteCount > 0 && 
+				teams[COLOR_WHITE].voteCount > 0) endGame(COLOR_UNKNOWN,"mutual mole vote");
 		}
     }
     
@@ -433,6 +432,8 @@ public class MoleGame implements Runnable {
     	if (winner != COLOR_UNKNOWN) {
     		spam(colorString(winner) + " wins by " + reason + "!"); 
     		award(winner,winBonus);
+    		listener.updateUserData(teams[winner].players, teams[getNextTurn(winner)].players);
+    		
     	}
     	else {
     		spam("Game Over! (" + reason + ")");
