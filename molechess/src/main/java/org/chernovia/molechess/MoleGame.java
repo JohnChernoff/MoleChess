@@ -342,13 +342,11 @@ public class MoleGame implements Runnable {
 		if (suspect != null) {
 			spam(suspect.user.name + " is voted off!");
 			if (suspect.role == MolePlayer.ROLE.MOLE) {
-    			spam(suspect.user.name + " was " + "the Mole!");
-				award(player.color, moleBonus);
+    			spam(suspect.user.name + " was " + "the Mole!"); //award(player.color, moleBonus);
 			} 
 			else {
 				MolePlayer mole = getMole(player.color);
-				spam(mole.user.name + " was " + "the Mole!");
-				award(mole, moleBonus);
+				spam(mole.user.name + " was " + "the Mole!"); //award(mole, moleBonus);
 			}
 			if (defection) {
 				int newColor = getNextTurn(suspect.color);
@@ -428,15 +426,16 @@ public class MoleGame implements Runnable {
     	return !playing;
     }
     
+    //handle aborts
     public void endGame(int winner, String reason) {
     	if (winner != COLOR_UNKNOWN) {
-    		spam(colorString(winner) + " wins by " + reason + "!"); 
-    		award(winner,winBonus);
-    		listener.updateUserData(teams[winner].players, teams[getNextTurn(winner)].players);
+    		spam(colorString(winner) + " wins by " + reason + "!"); //award(winner,winBonus);
+    		listener.updateUserData(teams[winner].players, teams[getNextTurn(winner)].players, false);
     		
     	}
     	else {
     		spam("Game Over! (" + reason + ")");
+    		listener.updateUserData(teams[COLOR_WHITE].players, teams[COLOR_BLACK].players, true);
     	}
     	playing = false; 
     	if (gameThread != null && gameThread.getState()==Thread.State.TIMED_WAITING) gameThread.interrupt();

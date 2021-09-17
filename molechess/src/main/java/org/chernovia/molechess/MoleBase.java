@@ -61,7 +61,7 @@ public class MoleBase {
 	
 	public Connection connect(String uri,String usr,String pwd,String db) {
 		try {
-			Class.forName("com.mysql.jdbc.Driver"); //.newInstance();
+			//Class.forName("com.mysql.jdbc.Driver"); //.newInstance();
 			String connStr = "jdbc:mysql://" + uri + 
 			   		"/" + db + 
 			   		"?user=" + usr + 
@@ -69,9 +69,9 @@ public class MoleBase {
 			//System.out.println("Connection String: " + connStr);
 			return DriverManager.getConnection(connStr);
 		}
-		catch(ClassNotFoundException ex) {
-		   MoleServ.log(Level.SEVERE,"Error: unable to load driver class"); //System.exit(1);
-		}
+		//catch(ClassNotFoundException ex) {
+		//   MoleServ.log(Level.SEVERE,"Error: unable to load driver class"); //System.exit(1);
+		//}
 		catch (SQLException ex) {
 			MoleServ.log(Level.SEVERE,"SQLException: " + ex.getMessage());
 			MoleServ.log(Level.SEVERE,"SQLState: " + ex.getSQLState());

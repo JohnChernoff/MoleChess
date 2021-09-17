@@ -27,7 +27,7 @@ import org.chernovia.lib.zugserv.web.*;
 import org.chernovia.utils.CommandLineParser;
 
 //TODO: how do I export to pgn?
-//handle draws
+//~handle draws
 //~stockplug M1 blindness
 //~database
 //~molevote bug
@@ -72,7 +72,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		serv = (ZugServ)new WebSockServ(port, this);
 		serv.startSrv();
 		startTime = System.currentTimeMillis();
-		moleBase = new MoleBase("localhost:3306","zugmole",parser.getArgumentValue("dbpass")[0],"molechess");
+		moleBase = new MoleBase("localhost:3306",
+		parser.getArgumentValue("dbuser")[0],parser.getArgumentValue("dbpass")[0],"molechess");
 	}
 	
 	private void addUserData(MoleUser user) {
@@ -100,10 +101,11 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		query.cleanup(); return null;
 	}
 	
-	public void updateUserData(ArrayList<MolePlayer> winners, ArrayList<MolePlayer> losers) {
+	public void updateUserData(ArrayList<MolePlayer> winners, ArrayList<MolePlayer> losers, boolean draw) {
 		for (MolePlayer p : winners) refreshUserData(p.user);
 		for (MolePlayer p : losers) refreshUserData(p.user);
-		int ratingGain = 16 - (int)((calcAvgRating(winners) - calcAvgRating(losers)) * .04);
+			int ratingDiff = (int)((calcAvgRating(winners) - calcAvgRating(losers)) * .04);
+		int ratingGain = draw ? ratingDiff : 16 - ratingDiff;
 		if (ratingGain > 32) ratingGain = 32; else if (ratingGain < 0) ratingGain = 0;
 		for (MolePlayer p : winners) {
 			if (!p.ai) updateUserRating(p.user,p.user.getData().rating + 
@@ -125,11 +127,11 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		return Math.round(total/team.size());
 	}
 	
-	//TODO: draws
 	private void updateUserRating(MoleUser user, int newRating, boolean winner) {
 		MoleBase.MoleQuery query = moleBase.makeQuery(
 			"UPDATE `players` SET Rating='" + newRating + "' WHERE Name='" + user.name + "'");
 		query.runUpdate();
+		user.tell("Rating change: " + user.getData().rating + " -> " + newRating);
 		if (winner) {
 			query.setQueryString("UPDATE `players` SET Wins='" + (user.getData().wins + 1) + 
 			"' WHERE Name='" + user.name + "'");
@@ -338,7 +340,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 				user.tell(WebSockServ.MSG_SERV,
 						"Uptime: " + ((System.currentTimeMillis() - startTime) / 1000)); break;
 			case "finger":
-				user.tell(WebSockServ.MSG_SERV,refreshUserData(user).toString());
+				user.tell(WebSockServ.MSG_SERV,refreshUserData(user).toString()); break;
 			default: user.tell(WebSockServ.MSG_ERR,"Error: command not found");
 		}
 	}
