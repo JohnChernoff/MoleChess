@@ -144,6 +144,23 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		}
 	}
 	
+	private ArrayNode getTopPlayers(int n) {
+		ArrayNode playlist = OBJ_MAPPER.createArrayNode();
+		MoleBase.MoleQuery query = moleBase.makeQuery(
+			"SELECT * FROM players ORDER BY Rating DESC LIMIT " + n);
+		ResultSet rs = query.runQuery(); 
+		if (rs != null) try {
+			while (rs.next()) {
+				ObjectNode node = OBJ_MAPPER.createObjectNode();
+				node.put("name", rs.getString("Name"));
+				node.put("rating", rs.getInt("Rating"));
+				playlist.add(node);
+			}
+		}
+		catch (SQLException ergh) {}
+		return playlist;
+	}
+	
 	public JsonNode toJSON() {
 		ObjectNode node = OBJ_MAPPER.createObjectNode();
 		node.put("Uptime: ", (System.currentTimeMillis() - startTime)/1000);
@@ -295,6 +312,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 					game.resign(user);
 				}
 			}
+			else if (typeTxt.equals("topten")) {
+				user.tell("top",getTopPlayers(10));
+			}
 			else if (typeTxt.equals("chat")) {
 				ObjectNode node = OBJ_MAPPER.createObjectNode();
 				node.put("player", user.name);
@@ -369,15 +389,11 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	private void handleLogin(Connection conn, String token, boolean testing) {
 		MoleUser relogger = handleRelogging(conn,token);
 		if (relogger != null) {
-			relogger.tell(WebSockServ.MSG_LOG_SUCCESS, "Relog Successful: Welcome back!");
-			updateUser(relogger);
+			addUser(relogger,"Relog Successful: Welcome back!",false);
 		}
 		else if (testing) {
 			String name = token; if (validString(name)) {
-				MoleUser newUser = new MoleUser(conn, token, name);
-				users.add(newUser);	
-				newUser.tell(WebSockServ.MSG_LOG_SUCCESS, "Test Login Successful: Welcome!");
-				updateUser(newUser);
+				addUser(new MoleUser(conn, token, name),"Test Login Successful: Welcome!");
 			}
 			else conn.tell(WebSockServ.MSG_ERR, "Ruhoh: Invalid Data!");
 		}
@@ -390,19 +406,19 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			else {
 				JsonNode username = accountData.get("username");
 				if (username != null) {
-					MoleUser newUser = new MoleUser(conn, token, username.asText());
-					addUser(newUser);
-					newUser.tell(WebSockServ.MSG_LOG_SUCCESS, "Login Successful: Welcome!");
-					updateUser(newUser);
+					addUser(new MoleUser(conn, token, username.asText()),"Login Successful: Welcome!");
 				}
 				else conn.tell(WebSockServ.MSG_ERR, "Login Error: weird Lichess API result");
 			}
 		}
 	}
 	
-	private void addUser(MoleUser user) {
-		users.add(user);
-		addUserData(user);
+	private void addUser(MoleUser user, String msg) { addUser(user,msg,true); }
+	private void addUser(MoleUser user, String msg, boolean add) {
+		if (add) { users.add(user); addUserData(user); }
+		user.tell(WebSockServ.MSG_LOG_SUCCESS, msg);
+		updateUser(user);
+		user.tell("top",getTopPlayers(10));
 	}
 
 	@Override
