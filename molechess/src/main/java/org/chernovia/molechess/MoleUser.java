@@ -19,6 +19,16 @@ public class MoleUser {
 	  public String toString() {
 		  return "Wins: " + wins + ", Losses: " + losses + ", Rating: " + rating; 
 	  }
+	  public JsonNode toJSON(boolean ratingOnly) {
+		  ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+		  if (!ratingOnly) {
+			  node.put("wins",wins);
+			  node.put("losses",losses);
+			  node.put("about",about);
+		  }
+		  node.put("rating",rating);
+		  return node;
+	  }
   }
   
   public MoleUser(Connection c, String o, String n) {
@@ -54,9 +64,10 @@ public class MoleUser {
       this.conn.tell(type, node); 
   }
   
-  public JsonNode toJSON() {
+  public JsonNode toJSON(boolean ratingOnly) {
     ObjectNode obj = MoleServ.OBJ_MAPPER.createObjectNode();
     obj.put("name", this.name);
+    if (data != null) obj.set("data", data.toJSON(ratingOnly));
     return (JsonNode)obj;
   }
   

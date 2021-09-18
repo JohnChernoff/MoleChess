@@ -27,6 +27,11 @@ import org.chernovia.lib.zugserv.web.*;
 import org.chernovia.utils.CommandLineParser;
 
 //TODO: how do I export to pgn?
+//50 move rule draws
+//Double Mole Role?
+//Inspector Role?
+//Takebacker Role?
+//handle AWOL team members
 //~handle draws
 //~stockplug M1 blindness
 //~database
@@ -130,7 +135,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	private void updateUserRating(MoleUser user, int newRating, boolean winner) {
 		MoleBase.MoleQuery query = moleBase.makeQuery(
 			"UPDATE `players` SET Rating='" + newRating + "' WHERE Name='" + user.name + "'");
-		query.runUpdate();
+			query.runUpdate();
 		user.tell("Rating change: " + user.getData().rating + " -> " + newRating);
 		if (winner) {
 			query.setQueryString("UPDATE `players` SET Wins='" + (user.getData().wins + 1) + 
@@ -165,7 +170,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		ObjectNode node = OBJ_MAPPER.createObjectNode();
 		node.put("Uptime: ", (System.currentTimeMillis() - startTime)/1000);
 		ArrayNode usersNode = OBJ_MAPPER.createArrayNode();
-		for (MoleUser user : users) usersNode.add(user.toJSON());
+		for (MoleUser user : users) usersNode.add(user.toJSON(true));
 		node.set("users",usersNode);
 		return node;
 	}
@@ -289,7 +294,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			} 
 			else if (typeTxt.equals("voteoff")) {
 				JsonNode title = dataNode.get("board");
-				JsonNode suspect = dataNode.get("suspect");
+				JsonNode suspect = dataNode.get("player");
 				if (title != null && suspect != null) {
 					MoleGame game = games.get(title.asText());
 					if (game == null) {
@@ -312,8 +317,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 					game.resign(user);
 				}
 			}
-			else if (typeTxt.equals("topten")) {
-				user.tell("top",getTopPlayers(10));
+			else if (typeTxt.equals("top")) {
+				user.tell("top",getTopPlayers(Integer.parseInt(dataTxt)));
 			}
 			else if (typeTxt.equals("chat")) {
 				ObjectNode node = OBJ_MAPPER.createObjectNode();
@@ -419,6 +424,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		user.tell(WebSockServ.MSG_LOG_SUCCESS, msg);
 		updateUser(user);
 		user.tell("top",getTopPlayers(10));
+		refreshUserData(user);
 	}
 
 	@Override
