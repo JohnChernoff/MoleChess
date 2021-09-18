@@ -77,10 +77,12 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	}
 	
 	private void addUserData(MoleUser user) {
-		MoleBase.MoleQuery query = moleBase.makeQuery(
-			"INSERT INTO `players` (`Name`, `Wins`, `Losses`, `Rating`, `DateCreated`, `About`) " + 
-			"VALUES ('" + user.name + "', '0', '0', '1600', CURRENT_TIMESTAMP, '')");
-		query.runUpdate(); //("Insert Result: " + query.runUpdate());
+		if (refreshUserData(user) == null) {
+			MoleBase.MoleQuery query = moleBase.makeQuery(
+				"INSERT INTO `players` (`Name`, `Wins`, `Losses`, `Rating`, `DateCreated`, `About`) " + 
+				"VALUES ('" + user.name + "', '0', '0', '1600', CURRENT_TIMESTAMP, '')");
+			query.runUpdate(); //("Insert Result: " + query.runUpdate());
+		}
 	}
 	
 	private MoleUser.MoleData refreshUserData(MoleUser user) {
@@ -88,16 +90,14 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		MoleBase.MoleQuery query = moleBase.makeQuery(
 				"SELECT * FROM `players` WHERE Name='" + user.name + "'");
 		ResultSet rs = query.runQuery(); 
-		if (rs != null) {
-			try {
-				rs.next();
+		try {
+			if (rs != null && rs.next()) {
 				user.setData(
 					rs.getInt("Wins"),rs.getInt("Losses"),rs.getInt("Rating"),rs.getString("About"));
 				query.cleanup(); return user.getData();
-				
 			}
-			catch (SQLException doh) { log(Level.SEVERE,doh.getMessage()); }
 		}
+		catch (SQLException doh) { log(Level.SEVERE,doh.getMessage()); }
 		query.cleanup(); return null;
 	}
 	
