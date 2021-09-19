@@ -74,7 +74,7 @@ public class MoleGame implements Runnable {
 	}
 	
 	public static List<String> MOLE_NAMES = MoleServ.loadRandomNames("resources/molenames.txt");
-	public static final String MSG_TYPE_MOVELIST = "movelist";
+	//public static final String MSG_TYPE_MOVELIST = "movelist";
 	public static final int COLOR_UNKNOWN = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
 	public enum GAME_RESULT { ONGOING, DRAW, CHECKMATE, STALEMATE, ABANDONED };
 	public enum GAME_PHASE { PREGAME, VOTING, POSTGAME };
@@ -107,6 +107,7 @@ public class MoleGame implements Runnable {
 		for (int color = COLOR_BLACK; color <= COLOR_WHITE; color++) teams[color] = new MoleTeam(color);
 		moveHistory = new ArrayList<MoveVotes>();
 		lastActivity = System.currentTimeMillis();
+    	turn = COLOR_WHITE; board = new Board(); moveNum = 1;
 	}
 	
 	public MoleUser getCreator() { return creator; }
@@ -119,13 +120,12 @@ public class MoleGame implements Runnable {
 		return (!playing && ((System.currentTimeMillis() - timeout) > lastActivity));
 	}
 	
-	
-	public void notify(MoleUser user, MoleResult action) {
-		notify(user,action,false);
-	}
-	public void notify(MoleUser user, MoleResult action, boolean servUpdate) { 
-		listener.notify(user, action, action.success && servUpdate);
-		if (action.success) spam("game_update",this.toJSON(false)); 
+	private void update(MoleUser user, MoleResult action) { update(user,action,false); }
+	private void update(MoleResult action) { update(null,action,false); }
+	private void update(MoleResult action, boolean moves) { update(null,action,moves); }
+	private void update(MoleUser user, MoleResult action, boolean moves) {
+		if (user == null) listener.updateGame(this, action, moves);
+		else listener.updateUser(user, this, action, moves);
 	}
 	
     public JsonNode toJSON(boolean history) {
@@ -135,20 +135,21 @@ public class MoleGame implements Runnable {
     	obj.set("teams", teamArray);
     	obj.put("title", title);
     	obj.put("creator", creator.name);
+    	obj.put("currentFEN", board.getFen());
     	if (history) obj.set("history",historyToJSON());
     	return obj;
     }
     
     public void addObserver(MoleUser user) {
     	if (!observers.contains(user)) {
-    		observers.add(user); user.tell(MSG_TYPE_MOVELIST,historyToJSON());
-    		notify(user, new MoleResult("Observing: " + title));
+    		observers.add(user); //user.tell(MSG_TYPE_MOVELIST,historyToJSON());
+    		update(user,new MoleResult("Observing: " + title),true);
     	}
-    	else notify(user, new MoleResult(false,"Error: already observing"));
+    	else update(user,new MoleResult(false,"Error: already observing"));
     }
     
     public void removeObserver(MoleUser user) {
-    	if (observers.remove(user)); notify(user, new MoleResult("No longer observing: " + title));
+    	if (observers.remove(user)); update(user,new MoleResult("No longer observing: " + title));
     }
   
 	public void addPlayer(MoleUser user, int color) {
@@ -156,19 +157,23 @@ public class MoleGame implements Runnable {
 		if (player != null) {
 			if (player.away) {
 				player.away = false;
-				listener.notify(user, new MoleResult("Rejoining game: " + title),true);
+				update(user, new MoleResult("Rejoining game: " + title),true);
+				update(new MoleResult(user.name + " rejoins the game"));
+				
 			} 
-			else notify(user, new MoleResult(false, "Error: already joined"));
+			else update(user, new MoleResult(false, "Error: already joined"));
 		} 
 		else if (phase != GAME_PHASE.PREGAME) {
-			notify(user, new MoleResult(false, "Game already begun")); 
+			update(user, new MoleResult(false, "Game already begun")); 
 		}
 		else if (teams[color].players.size() >= maxPlayers - 1) {
-			notify(user, new MoleResult(false, "Too many players")); 
+			update(user, new MoleResult(false, "Too many players")); 
 		}
 		else {
-			teams[color].players.add(new MolePlayer(user, this, color, nextGUIColor()));
-			listener.notify(user, new MoleResult("Joined game: " + title),true);
+			MolePlayer newPlayer = new MolePlayer(user, this, color, nextGUIColor());
+			teams[color].players.add(newPlayer);
+			update(user,new MoleResult("Joined game: " + title),true);
+			update(new MoleResult(user.name + " joins the game"));
 			lastActivity = System.currentTimeMillis();
 		}
 	}
@@ -184,8 +189,7 @@ public class MoleGame implements Runnable {
 			else {
 				player.away = true;
 			} 
-			spam(player.user.name + " leaves.");
-			listener.notify(user, new MoleResult("Left game: " + title),true);
+			update(new MoleResult(user.name + " leaves"));
 			if (isDeserted()) {
 				switch(phase) {
 					case PREGAME: listener.finished(this); break;
@@ -194,32 +198,32 @@ public class MoleGame implements Runnable {
 				}
 			}
 		} 
-		else if (!observed) notify(user, new MoleResult(false, "Player not found"));
+		else if (!observed) update(user, new MoleResult(false, "Player not found"));
 	}
 	
 	public void kickPlayer(MoleUser kicker, String username) {
 		MolePlayer kickerPlayer = getPlayer(kicker); 
 		if (kickerPlayer == null) {
-			notify(kicker,new MoleResult(false,"Not in this game: " + kicker.name));
+			update(kicker,new MoleResult(false,"Not in this game: " + kicker.name));
 		}
 		else {
 			MolePlayer player = getPlayer(username,kickerPlayer.color);
 			if (player == null) {
-				notify(kicker,new MoleResult(false,"Not in this game: " + username));
+				update(kicker,new MoleResult(false,"Not in this game: " + username));
 			}
 			else if (phase != GAME_PHASE.VOTING) {
-				notify(kicker,new MoleResult(false,"Bad phase: " + phase));
+				update(kicker,new MoleResult(false,"Bad phase: " + phase));
 			}
 			else if (player.skipped < kickFlag) {
-				notify(kicker,new MoleResult(false,
+				update(kicker,new MoleResult(false,
 				username + " must be inactive for " + kickFlag + " turns (currently: " + 
 				player.skipped + ")"));
 			}
 			else if (player.ai) {
-				notify(kicker,new MoleResult(false,"Cannot kick robots!"));
+				update(kicker,new MoleResult(false,"Cannot kick robots!"));
 			}
 			else {
-				spam(kicker.name + " kicks " + username + " (reason: inactivity)");
+				update(new MoleResult(kicker.name + " kicks " + username + " (reason: inactivity)"));
 				player.votedOff = true;
 			}
 		}
@@ -227,49 +231,45 @@ public class MoleGame implements Runnable {
 	
     public void startGame(MoleUser user) {
     	if (phase != GAME_PHASE.PREGAME) {
-    		notify(user, new MoleResult(false, "Game already begun")); 
+    		update(user, new MoleResult(false, "Game already begun")); 
     	}
     	else if (!creator.equals(user)) {
-    		notify(user, new MoleResult(false, "Error: permission denied"));
+    		update(user, new MoleResult(false, "Error: permission denied"));
     	}
     	else {
     		if (!aiFilling && teams[COLOR_BLACK].players.size() != teams[COLOR_WHITE].players.size()) {
-           		notify(user, new MoleResult(false, "Error: unbalanced teams")); 
+    			update(user, new MoleResult(false, "Error: unbalanced teams")); 
            	}
             else if (!aiFilling && teams[COLOR_BLACK].players.size() < minPlayers) {
-           		notify(user, new MoleResult(false, "Error: too few players"));
+            	update(user, new MoleResult(false, "Error: too few players"));
     		}
             else {
         		if (aiFilling) { aiFill(COLOR_BLACK); aiFill(COLOR_WHITE); }
            		gameThread = new Thread(this); gameThread.start();
-          		spam(("Starting Game"));
-          		listener.started(this);
             }
     	}
     }
         
     public void voteMove(MoleUser user, String movestr) {
     	MolePlayer player = getPlayer(user);
-    	if (player == null) {
-    		notify(user, new MoleResult(false, "Player not found: " + user.name)); 
-    	}
+    	if (player == null) { update(user, new MoleResult(false, "Player not found: " + user.name)); }
     	else voteMove(player,movestr); 
     }
     public void voteMove(MolePlayer player, String movestr) {
     	if (phase != GAME_PHASE.VOTING) {
-    		notify(player.user, new MoleResult(false, "Bad phase: " + phase));
+    		update(player.user, new MoleResult(false, "Bad phase: " + phase));
     	}
     	else if (player.color != turn) {
-    		notify(player.user, new MoleResult(false, "Current turn: " + colorString(turn)));
+    		update(player.user, new MoleResult(false, "Current turn: " + colorString(turn)));
     	}
     	else if (player.votedOff) {
-    		notify(player.user, new MoleResult(false, "Sorry, you've been voted off")); 
+    		update(player.user, new MoleResult(false, "Sorry, you've been voted off")); 
     	}
     	else if (addMoveVote(player,getMove(movestr))) {
-    		notify(player.user, new MoleResult(player.user.name + " votes: " + movestr));
+    		update(new MoleResult(player.user.name + " votes: " + movestr));
     	}
 		else {
-			notify(player.user, new MoleResult(false,"Bad Move: " + movestr));
+			update(player.user, new MoleResult(false,"Bad Move: " + movestr));
 		}
     }
     
@@ -277,27 +277,27 @@ public class MoleGame implements Runnable {
     public void castMoleVote(MoleUser user, String suspectName) {
     	MolePlayer player = getPlayer(user);
     	if (player == null)	{
-    		notify(user, new MoleResult(false, "Player not found: " + user.name)); 
+    		update(user, new MoleResult(false, "Player not found: " + user.name)); 
     	}
     	else if (!playing) {
-    		notify(user, new MoleResult(false, "Game not currently running")); 
+    		update(user, new MoleResult(false, "Game not currently running")); 
     	}
     	else if (teams[player.color].voteCount >= voteLimit) {
-    		notify(user, new MoleResult(false, "No more voting!")); 
+    		update(user, new MoleResult(false, "No more voting!")); 
     	}
     	else if (player.votedOff) {
-    		notify(user, new MoleResult(false, "Sorry, you've been voted off")); 
+    		update(user, new MoleResult(false, "Sorry, you've been voted off")); 
     	}
     	else {
         	MolePlayer p = getPlayer(suspectName, player.color);
         	if (phase != GAME_PHASE.VOTING) {
-        		notify(user, new MoleResult(false, "Cannot vote during: " + phase));
+        		update(user, new MoleResult(false, "Cannot vote during: " + phase));
         	}
         	else if (p != null) {
         		 handleMoleVote(player,p);
         	} 
         	else {
-        		notify(user, new MoleResult(false, "Suspect not found"));
+        		update(user, new MoleResult(false, "Suspect not found"));
         	} 
     	}
     }
@@ -305,17 +305,17 @@ public class MoleGame implements Runnable {
     public void resign(MoleUser user) {
     	MolePlayer player = getPlayer(user);
     	if (player == null) {
-    		notify(user, new MoleResult(false, "Player not found: " + user.name)); 
+    		update(user, new MoleResult(false, "Player not found: " + user.name)); 
     	}
     	else if (phase != GAME_PHASE.VOTING) {
-    		notify(user, new MoleResult(false, "Bad phase: " + phase));
+    		update(user, new MoleResult(false, "Bad phase: " + phase));
     	}
     	else if (player.color != turn) {
-    		notify(user, new MoleResult(false, "Wrong turn: " + colorString(turn)));
+    		update(user, new MoleResult(false, "Wrong turn: " + colorString(turn)));
     	}
     	else {
     		player.resigning = true;
-    		spam(player.user.name + " resigns");
+    		update(new MoleResult(player.user.name + " resigns"));
     		if (resigning(player.color)) endGame(getNextTurn(),"resignation"); 
     	}
     }
@@ -323,8 +323,7 @@ public class MoleGame implements Runnable {
     public void run() {
     	playing = true;
     	setMole(COLOR_BLACK); setMole(COLOR_WHITE);
-    	turn = COLOR_WHITE; board = new Board(); moveNum = 1;
-    	listener.started(this); spamMove(null); //starting position
+    	listener.started(this); //spamMove(null); //starting position
     	while (playing) {
   			spam("Turn #" + moveNum + ": " + colorString(turn));
   			autoPlay(turn);
@@ -341,10 +340,9 @@ public class MoleGame implements Runnable {
        				spam("Picking randomly from the following moves: \n" + listMoves(turn));
        	 			move = pickMove(moveList);
        			}
-       			spam("Selected Move: " + move);
        			if (makeMove(move).success) {
    					moveHistory.add(getMoveVotes(turn,board.getFen(),move));
-   			    	spam(MSG_TYPE_MOVELIST,historyToJSON());
+   	       			update(new MoleResult("Selected Move: " + move),true);
        				if (playing) {
                 		clearMoveVotes(turn);
        					turn = getNextTurn();
@@ -379,11 +377,11 @@ public class MoleGame implements Runnable {
 			}
 			if (defection) {
 				int newColor = getNextTurn(suspect.color);
-				spam(suspect.user.name + " joins " + colorString(newColor));
 				teams[suspect.color].players.remove(suspect);
 				suspect.color = newColor;
+				suspect.role = MolePlayer.ROLE.PLAYER;
 				teams[suspect.color].players.add(suspect);
-				listener.updateAll();
+				update(new MoleResult(suspect.user.name + " defects to " + colorString(newColor) + "!"));
 			}
 			else suspect.votedOff = true;
 			teams[player.color].voteCount++;
@@ -397,12 +395,12 @@ public class MoleGame implements Runnable {
     }
     
     private JsonNode historyToJSON() {
-    	ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+    	//ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
     	ArrayNode historyNode = MoleServ.OBJ_MAPPER.createArrayNode();
     	for (MoveVotes votes : moveHistory) historyNode.add(votes.toJSON());    		
-    	node.set("history",historyNode);
-    	node.put("title",title); //log("Move History: " + node.toPrettyString());
-    	return node;
+    	//node.set("history",historyNode);
+    	//node.put("title",title); //log("Move History: " + node.toPrettyString());
+    	return historyNode;
     }
     
 	private MolePlayer getPlayer(MoleUser user) {
@@ -589,15 +587,14 @@ public class MoleGame implements Runnable {
     }
   
     private MoleResult makeMove(Move move) {
-    	if (board.doMove(move)) {
-    		spamMove(move);
+    	if (board.doMove(move)) { //spamMove(move);
     		endgameCheck();
     		return new MoleResult("Move: " + move);
     	}
     	else return new MoleResult(false, "Invalid Move: " + move); //shouldn't occur
     }
     
-    private void spamMove(Move move) {
+    private void spamMovez(Move move) {
 		ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
 		node.put("lm",move == null ? "" : move.toString());
 		node.put("fen",board.getFen());
@@ -643,8 +640,8 @@ public class MoleGame implements Runnable {
     	} 
     }
   
-    private void spam(String msg) { spam("chat", msg); }
-    private void spam(String type, String msg) {
+    public void spam(String msg) { spam("chat", msg); }
+    public void spam(String type, String msg) {
     	ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
     	node.put("msg", msg);
     	node.put("source",title);

@@ -31,6 +31,7 @@ import org.chernovia.utils.CommandLineParser;
 //Double Mole Role?
 //Inspector Role?
 //Takebacker Role?
+//~Defecting Mole rating change bug
 //~handle AWOL team members
 //~handle draws
 //~stockplug M1 blindness
@@ -44,6 +45,8 @@ import org.chernovia.utils.CommandLineParser;
 //
 public class MoleServ extends Thread implements ConnListener, MoleListener {
 	static final String VERSION = "0.1"; 
+	static final String MSG_GAME_UPDATE = "game_update";
+	static final String MSG_GAMES_UPDATE = "games_update";
 	static final ObjectMapper OBJ_MAPPER = new ObjectMapper();
 	static final Logger LOGGER = Logger.getLogger("MoleLog");
 	static final Pattern ALPHANUMERIC_PATTERN = Pattern.compile("^[a-zA-Z0-9]*$");
@@ -185,11 +188,17 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		return null;
 	}
 	
-	private ArrayNode getAllGames() {
+	private ArrayNode getAllGames(boolean shallowCopy) {
 		try {
 			ArrayNode gameObj = OBJ_MAPPER.createArrayNode();
 			for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
-				gameObj.add(((MoleGame)entry.getValue()).toJSON(false)); 
+				MoleGame game = (MoleGame)entry.getValue();
+				if (shallowCopy) {
+					ObjectNode node = OBJ_MAPPER.createObjectNode();
+					node.put("title", game.getTitle());
+					gameObj.add(node);
+				}
+				else gameObj.add(game.toJSON(false));
 			}
 			return gameObj;
 		}
@@ -197,7 +206,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			log(Level.SEVERE,fuck.getMessage()); return null; 
 		}
 	}
-	  
+	
 	private boolean validString(String str) {
 		boolean valid = false;
 		if (str.length() > 0 && str.length() < MAX_STR_LEN) {
@@ -226,7 +235,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			else {
 				MoleGame game = new MoleGame(creator, title, this); game.setMoveTime(defMoveTime);
 				games.put(title, game);
-				updateAll();
+				updateGames(false);
 			}
 		} 
 		else {
@@ -344,10 +353,14 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 					String chatMsg = chatNode.asText("?"); node.put("msg", chatMsg);
 					String source = sourceNode.asText("?"); node.put("source", source);
 					if (source.equals("lobby")) spam("chat", node);
-					else gameChat(source,node);
+					else broadcast(source,node);
 				}
 				else { user.tell(WebSockServ.MSG_ERR, "Bad chat"); }
 			} 
+			else if (typeTxt.equals("update")) {
+				MoleGame game = games.get(dataTxt);
+				if (game != null) user.tell(MSG_GAME_UPDATE,game.toJSON(true));
+			}
 			else if (typeTxt.equals("cmd")) {
 				handleCmd(user,dataNode);
 			}
@@ -360,7 +373,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		catch (NullPointerException e) { e.printStackTrace(); }
 	}
 	
-	private void gameChat(String title, JsonNode node) {
+	private void broadcast(String title, JsonNode node) {
 		for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
 			MoleGame game = (MoleGame)entry.getValue();
 			if (game.getTitle().equals(title)) game.spam("chat",node);
@@ -393,7 +406,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
   		for (MoleUser user : this.users) user.tell(type, node); 
   	}
   	
-	private void updateUser(MoleUser user) { user.tell("games_update", getAllGames()); }
+	private void updateGameList(MoleUser user) { user.tell(MSG_GAMES_UPDATE, getAllGames(false)); }
 
   	private MoleUser handleRelogging(Connection conn, String token) {
 		MoleUser user = getUserByToken(token); 
@@ -438,30 +451,44 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	private void addUser(MoleUser user, String msg, boolean add) {
 		if (add) { users.add(user); addUserData(user); }
 		user.tell(WebSockServ.MSG_LOG_SUCCESS, msg);
-		updateUser(user);
+		updateGameList(user);
 		user.tell("top",getTopPlayers(10));
 		refreshUserData(user);
 	}
 
 	@Override
-	public void notify(MoleUser user, MoleResult action, boolean update) {
+	public void updateUser(MoleUser user,MoleGame game,MoleResult action,boolean moves) {
 		if (user != null) {
-			if (action.success) user.tell(action.message);
-			else user.tell(WebSockServ.MSG_ERR, action.message);
+			if (action.success) {
+				user.tell(action.message);
+				user.tell(MSG_GAME_UPDATE,game.toJSON(moves));
+			}
+			else user.tell(WebSockServ.MSG_ERR,action.message);
 		}
-		if (update) updateAll(); //TODO: distinguish between game and server-wide updates
+	}
+	
+	@Override
+	public void updateGame(MoleGame game,MoleResult action,boolean moves) {
+		if (action.success) {
+			game.spam(action.message);
+			game.spam(MSG_GAME_UPDATE,game.toJSON(moves));
+		}
+		else {
+			game.spam(WebSockServ.MSG_ERR,action.message);
+		}
 	}
 	
 	@Override
 	public void started(MoleGame game) {
-		updateAll();
+		game.spam(MSG_GAME_UPDATE, game.toJSON(true));
+		updateGames(false);
 	}
 	
 
 	@Override
 	public void finished(MoleGame game) {
 		games.remove(game.getTitle());
-		updateAll();
+		updateGames(false);
 	}
 	
 	@Override
@@ -476,12 +503,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
   				game.dropPlayer(user); 				
   			}
   		}
-  		updateAll();
   	}
 	
-	@Override
-	public void updateAll() {
-		spam("games_update", getAllGames());
+	private void updateGames(boolean deepcopy) {
+		spam("games_update", getAllGames(deepcopy));
 	}
 	
 	public void run() {
@@ -493,9 +518,11 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 				Thread.sleep(purgeFreq * 1000); 
 	  			for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
 	  				MoleGame game = (MoleGame)entry.getValue();
-	  				if (game.isDefunct()) games.remove(entry.getKey()); purged = true;
+	  				if (game.isDefunct()) {
+	  					games.remove(entry.getKey()); purged = true;
+	  				}
 	  			}
-	  			if (purged) updateAll();
+	  			if (purged) updateGames(false);
 			}
 			catch (InterruptedException e) { running = false; }
 		}
@@ -524,4 +551,6 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			log("Names: " + names.size());
 		}
 	}
+
+
 }
