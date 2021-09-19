@@ -481,9 +481,20 @@ public class MoleGame implements Runnable {
     	}
     }
     
+    private boolean onlyHuman(MolePlayer player) {
+    	if (player.ai) return false;
+    	for (MolePlayer p : teams[player.color].players) {
+    		if (!p.ai && !p.equals(player)) return false;
+    	}
+    	return true;
+    }
+    
     private void setMole(int color) {
-    	int p = (int)Math.floor(Math.random() * teams[color].players.size());
-    	MolePlayer player = teams[color].players.get(p);
+    	MolePlayer player;
+    	do {
+        	int p = (int)Math.floor(Math.random() * teams[color].players.size());
+        	player = teams[color].players.get(p);
+    	} while (onlyHuman(player));
     	player.role = MolePlayer.ROLE.MOLE;
     	player.user.tell("You're the mole!"); player.user.tell("mole","");
     }
