@@ -31,7 +31,7 @@ import org.chernovia.utils.CommandLineParser;
 //Double Mole Role?
 //Inspector Role?
 //Takebacker Role?
-//handle AWOL team members
+//~handle AWOL team members
 //~handle draws
 //~stockplug M1 blindness
 //~database
@@ -307,7 +307,23 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 				else {
 					user.tell(WebSockServ.MSG_ERR, "WTF: " + dataTxt);
 				} 
-			} 
+			}
+			else if (typeTxt.equals("kickoff")) {
+				JsonNode title = dataNode.get("board");
+				JsonNode suspect = dataNode.get("player");
+				if (title != null && suspect != null) {
+					MoleGame game = games.get(title.asText());
+					if (game == null) {
+						user.tell(WebSockServ.MSG_ERR, "Game not found: " + title);
+					} 
+					else {
+						game.kickPlayer(user, suspect.asText());
+					} 
+				} 
+				else {
+					user.tell(WebSockServ.MSG_ERR, "WTF: " + dataTxt);
+				} 
+			}
 			else if (typeTxt.equals("resign")) {
 				MoleGame game = games.get(dataTxt);
 				if (game == null) {

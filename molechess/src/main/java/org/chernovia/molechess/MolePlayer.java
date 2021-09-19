@@ -17,6 +17,7 @@ public class MolePlayer implements StockListener {
   	int rating;
     int score;
     int color;
+    int skipped;
     Move move = null;
     MolePlayer vote = null;
     ROLE role = ROLE.PLAYER;
@@ -24,7 +25,7 @@ public class MolePlayer implements StockListener {
   
   //TODO: fix color assignment bug when player rejoins
   public MolePlayer(MoleUser usr, MoleGame g, int c, Color c2) {
-    user = usr; game = g; color = c; guiColor = c2; score = 0;
+    user = usr; game = g; color = c; guiColor = c2; score = 0; skipped = 0;
   }
   
   public boolean isActive() {
@@ -41,6 +42,7 @@ public class MolePlayer implements StockListener {
     obj.put("game_col", color);
     obj.put("play_col", rgbToHex(guiColor.getRed(),guiColor.getGreen(),guiColor.getBlue()));
     obj.put("away", away);
+    obj.put("kickable", skipped >= game.getKickFlag());
     obj.set("user", user.toJSON(true));
     return obj;
   }

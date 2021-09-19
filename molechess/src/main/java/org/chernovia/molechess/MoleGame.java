@@ -85,7 +85,7 @@ public class MoleGame implements Runnable {
 	private MoleUser creator;
 	private String title;
 	private long lastActivity;
-	private int minPlayers = 3, maxPlayers = 6;
+	private int minPlayers = 3, maxPlayers = 6, kickFlag = 2;
 	private int turn;
 	private int moveTime = 12, postTime = 300, preTime = 999;
 	private double calcFactor = .25;
@@ -113,6 +113,7 @@ public class MoleGame implements Runnable {
 	public String getTitle() { return title; }
 	public int getMaxPlayers() { return maxPlayers; }
 	public void setMoveTime(int t) { moveTime = t; }
+	public int getKickFlag() { return kickFlag; }
 	public boolean isDefunct() { return isDefunct(preTime * 1000); }
 	public boolean isDefunct(int timeout) {
 		return (!playing && ((System.currentTimeMillis() - timeout) > lastActivity));
@@ -194,6 +195,34 @@ public class MoleGame implements Runnable {
 			}
 		} 
 		else if (!observed) notify(user, new MoleResult(false, "Player not found"));
+	}
+	
+	public void kickPlayer(MoleUser kicker, String username) {
+		MolePlayer kickerPlayer = getPlayer(kicker); 
+		if (kickerPlayer == null) {
+			notify(kicker,new MoleResult(false,"Not in this game: " + kicker.name));
+		}
+		else {
+			MolePlayer player = getPlayer(username,kickerPlayer.color);
+			if (player == null) {
+				notify(kicker,new MoleResult(false,"Not in this game: " + username));
+			}
+			else if (phase != GAME_PHASE.VOTING) {
+				notify(kicker,new MoleResult(false,"Bad phase: " + phase));
+			}
+			else if (player.skipped < kickFlag) {
+				notify(kicker,new MoleResult(false,
+				username + " must be inactive for " + kickFlag + " turns (currently: " + 
+				player.skipped + ")"));
+			}
+			else if (player.ai) {
+				notify(kicker,new MoleResult(false,"Cannot kick robots!"));
+			}
+			else {
+				spam(kicker.name + " kicks " + username + " (reason: inactivity)");
+				player.votedOff = true;
+			}
+		}
 	}
 	
     public void startGame(MoleUser user) {
@@ -528,7 +557,9 @@ public class MoleGame implements Runnable {
     			MoveVote mv = new MoveVote(player,player.move);
     			if (player.move == selectedMove) { selected = true; mv.selected = true;	}
     			voteList.add(mv); 
+    			player.skipped = 0;
     		}
+    		else player.skipped++;
     	}
     	if (!selected) {
     		MoveVote mv = new MoveVote(null,selectedMove); mv.selected = true; voteList.add(mv);
