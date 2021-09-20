@@ -428,13 +428,17 @@ public class MoleGame implements Runnable {
 		return true;
 	}
 	
-    private boolean newPhase(GAME_PHASE p, int countdown) {
+    private boolean newPhase(GAME_PHASE p, int seconds) {
     	phase = p; spam("phase", phase.toString());
     	boolean timeout = true;
-    	if (countdown > 0) {
-    		spam("countdown", "" + countdown);
+    	if (seconds > 0) {
+    		ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+    		node.put("seconds",seconds);
+    		node.put("turn",turn);
+    		node.put("title",title);
+    		spam("countdown",node);
     		try {
-    			Thread.sleep((countdown * 1000));
+    			Thread.sleep((seconds * 1000));
     		} catch (InterruptedException e) {
     			timeout = false;
     		} 

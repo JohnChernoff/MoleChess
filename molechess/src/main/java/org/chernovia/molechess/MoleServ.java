@@ -27,6 +27,8 @@ import org.chernovia.lib.zugserv.web.*;
 import org.chernovia.utils.CommandLineParser;
 
 //TODO: how do I export to pgn?
+//ornicar2: you need to use a ConcurrentHashMap
+//update player leaving
 //50 move rule draws
 //Double Mole Role?
 //Inspector Role?
@@ -515,7 +517,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		while (running) {
 			boolean purged = false;
 			try { 
-				Thread.sleep(purgeFreq * 1000); 
+				Thread.sleep(purgeFreq * 1000); //TODO: use ConcurrentHashMap (ornicar)
 	  			for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
 	  				MoleGame game = (MoleGame)entry.getValue();
 	  				if (game.isDefunct()) {
