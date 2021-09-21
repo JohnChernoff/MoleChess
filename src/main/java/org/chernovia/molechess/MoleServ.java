@@ -6,18 +6,17 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-
-import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.ConcurrentModificationException;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
@@ -27,12 +26,12 @@ import org.chernovia.lib.zugserv.web.*;
 import org.chernovia.utils.CommandLineParser;
 
 //TODO: how do I export to pgn?
-//ornicar2: you need to use a ConcurrentHashMap
 //update player leaving
 //50 move rule draws
 //Double Mole Role?
 //Inspector Role?
 //Takebacker Role?
+//~ornicar2: you need to use a ConcurrentHashMap
 //~Defecting Mole rating change bug
 //~handle AWOL team members
 //~handle draws
@@ -56,7 +55,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	static String STOCK_PATH = "stockfish/stockfish";
 	static int STOCK_STRENGTH = 2000, STOCK_MOLE_STRENGTH = 1500;
 	private ArrayList<MoleUser> users = new ArrayList<>();
-	private HashMap<String, MoleGame> games = new HashMap<>();
+	private ConcurrentHashMap<String, MoleGame> games = new ConcurrentHashMap<>();
 	private ZugServ serv;
 	private int purgeFreq = 30, maxUserGames = 3, defMoveTime = 12;
 	private long startTime; 
@@ -539,13 +538,13 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	
     public static List<String> loadRandomNames(final String filename) {
 		List<String> names = new ArrayList<>();
-		try {
-			java.io.File file = new java.io.File(filename);
-			Scanner scanner = new Scanner(file);
+		try { //System.out.println("Working Directory = " + System.getProperty("user.dir"));
+			InputStream stream = MoleServ.class.getResourceAsStream("/" + filename);
+			Scanner scanner = new Scanner(stream);
 			while (scanner.hasNextLine()) names.add(scanner.nextLine());
 			scanner.close();
 			return names;
-		} catch (FileNotFoundException e) {
+		} catch (Exception e) {
 			e.printStackTrace();
 			names = Arrays.asList("Steinitz", "Lasker", "Capablanca", "Karpov", "Kasparov");
 			return names;
@@ -553,6 +552,4 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			log("Names: " + names.size());
 		}
 	}
-
-
 }

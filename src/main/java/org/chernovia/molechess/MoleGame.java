@@ -73,7 +73,7 @@ public class MoleGame implements Runnable {
 		}
 	}
 	
-	public static List<String> MOLE_NAMES = MoleServ.loadRandomNames("resources/molenames.txt");
+	public static List<String> MOLE_NAMES = MoleServ.loadRandomNames("molenames.txt");
 	//public static final String MSG_TYPE_MOVELIST = "movelist";
 	public static final int COLOR_UNKNOWN = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
 	public enum GAME_RESULT { ONGOING, DRAW, CHECKMATE, STALEMATE, ABANDONED };
