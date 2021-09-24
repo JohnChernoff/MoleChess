@@ -40,7 +40,7 @@ public class MoleUser {
   public MoleData setData(int wins, int losses, int rating, String about) {
 	  data = new MoleData(wins,losses,rating,about); return data;
   }
-  public MoleData getData() { return data; }
+  public MoleData getData() { return (data != null)? data : new MoleData(0,0,0,""); }
   
   public boolean sameConnection(Connection c) {
     return (this.conn == c);
