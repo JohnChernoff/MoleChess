@@ -27,6 +27,7 @@ import org.chernovia.utils.CommandLineParser;
 
 //TODO: how do I export to pgn?
 //update player leaving
+//ai voting
 //50 move rule draws
 //Double Mole Role?
 //Inspector Role?
