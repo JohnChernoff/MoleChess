@@ -32,7 +32,7 @@ public class MoleUser {
   }
   
   public MoleUser(Connection c, String o, String n) {
-    this.conn = c;
+    this.conn = c; if (conn != null) conn.setStatus(Connection.Status.STATUS_OK);
     this.oauth = o;
     this.name = n;
   }
@@ -48,7 +48,14 @@ public class MoleUser {
   
   public Connection getConn() { return conn; }
   public void setConn(Connection c) { conn = c; }
-  
+
+  public boolean isActiveUser() {
+      if (conn == null) return false;
+      Connection.Status status = conn.getStatus();
+      if (status == null) return false;
+      else return (status.equals(Connection.Status.STATUS_OK));
+  }
+
   public void tell(String msg) {
     tell("serv_msg", msg);
   }

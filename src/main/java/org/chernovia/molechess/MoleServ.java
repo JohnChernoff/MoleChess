@@ -26,7 +26,9 @@ import org.chernovia.lib.zugserv.web.*;
 import org.chernovia.utils.CommandLineParser;
 
 //TODO: how do I export to pgn?
+//sounds for turn, custom time controls, clearer clock, clearer PGN/movelist
 //update player leaving
+//ai voting
 //50 move rule draws
 //Double Mole Role?
 //Inspector Role?
@@ -140,7 +142,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			p.user.getData().rating;
 			total += rating;
 		}
-		return Math.round(total/team.size());
+		return total/team.size();
 	}
 
 	private void updateUserRating(MoleUser user, int newRating, boolean winner) {
@@ -151,13 +153,12 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		if (winner) {
 			query.setQueryString("UPDATE `players` SET Wins='" + (user.getData().wins + 1) +
 			"' WHERE Name='" + user.name + "'");
-			query.runUpdate();
 		}
 		else {
 			query.setQueryString("UPDATE `players` SET Losses='" + (user.getData().losses + 1) +
 			"' WHERE Name='" + user.name + "'");
-			query.runUpdate();
 		}
+		query.runUpdate();
 	}
 
 	private ArrayNode getTopPlayers(int n) {
@@ -181,7 +182,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		ObjectNode node = OBJ_MAPPER.createObjectNode();
 		node.put("Uptime: ", (System.currentTimeMillis() - startTime)/1000);
 		ArrayNode usersNode = OBJ_MAPPER.createArrayNode();
-		for (MoleUser user : users) usersNode.add(user.toJSON(true));
+		for (MoleUser user : users) {
+			if (user.isActiveUser()) usersNode.add(user.toJSON(true));
+		}
 		node.set("users",usersNode);
 		return node;
 	}
@@ -350,6 +353,36 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 					game.resign(user);
 				}
 			}
+			else if (typeTxt.equals("time")) {
+				JsonNode gameNode = dataNode.get("game"); JsonNode timeNode = dataNode.get("time");
+				if (gameNode == null) {
+					user.tell(WebSockServ.MSG_ERR, "Game not specified");
+				}
+				else if (timeNode == null) {
+					user.tell(WebSockServ.MSG_ERR, "Time not specified");
+				}
+				else {
+					String gameTitle = gameNode.asText(); MoleGame game = games.get(gameTitle);
+					if (game == null) {
+						user.tell(WebSockServ.MSG_ERR, "Game not found: " + gameTitle);
+					}
+					else {
+						if (game.getCreator().equals(user)) {
+							int time = timeNode.asInt();
+							if (time > 0 && time < 999) {
+								game.setMoveTime(time);
+								game.spam("New Time Control: " + time + " seconds per move");
+							}
+							else {
+								user.tell(WebSockServ.MSG_ERR, "Invalid Time: " + time);
+							}
+						}
+						else {
+							user.tell(WebSockServ.MSG_ERR, "Only the creator of this game can set the time");
+						}
+					}
+				}
+			}
 			else if (typeTxt.equals("top")) {
 				user.tell("top",getTopPlayers(Integer.parseInt(dataTxt)));
 			}
@@ -407,11 +440,13 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		}
 	}
 
-  	//private void spam(String type, String msg) {
-  	//	ObjectNode node = mapper.createObjectNode(); node.put("msg", msg); spam(type, node);
-  	//}
-  	private void spam(String type, JsonNode node) {
-  		for (MoleUser user : this.users) user.tell(type, node);
+	private void spam(String type, String msg) { spam(type,msg,null); }
+	private void spam(String type, JsonNode node) { spam(type,node,null); }
+  	private void spam(String type, String msg, MoleUser exclude) {
+  		ObjectNode node = OBJ_MAPPER.createObjectNode(); node.put("msg", msg); spam(type, node, exclude);
+  	}
+  	private void spam(String type, JsonNode node, MoleUser exclude) {
+  		for (MoleUser user : this.users) if (!user.equals(exclude)) user.tell(type, node);
   	}
 
 	private void updateGameList(MoleUser user) { user.tell(MSG_GAMES_UPDATE, getAllGames(false)); }
@@ -421,7 +456,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		if (user != null) {
 			user.tell("Multiple login detected, closing");
 			user.getConn().close();
-			user.setConn(conn); //users.remove(mu); users.add(newUser);
+			user.setConn(conn); conn.setStatus(Connection.Status.STATUS_OK); //users.remove(mu); users.add(newUser);
 			return user;
 		}
 		else return null;
@@ -457,7 +492,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 
 	private void addUser(MoleUser user, String msg) { addUser(user,msg,true); }
 	private void addUser(MoleUser user, String msg, boolean add) {
-		if (add) { users.add(user); addUserData(user); }
+		if (add) {
+			users.add(user); addUserData(user);
+			spam("serv_msg","Welcome, " + user.name + "!",user);
+		}
 		user.tell(WebSockServ.MSG_LOG_SUCCESS, msg);
 		updateGameList(user);
 		user.tell("top",getTopPlayers(10));
@@ -500,8 +538,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	}
 
 	@Override
-  	public void connected(Connection conn) {}
-
+  	public void connected(Connection conn) {
+	}
+    
 	@Override
   	public void disconnected(Connection conn) { //TODO: concurrency argh
   		MoleUser user = getUser(conn);
@@ -511,6 +550,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
   				game.dropPlayer(user);
   			}
   		}
+		conn.setStatus(Connection.Status.STATUS_DISCONNECTED);
   	}
 
 	private void updateGames(boolean deepcopy) {
