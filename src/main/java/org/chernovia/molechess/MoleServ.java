@@ -346,6 +346,36 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 					game.resign(user);
 				}
 			}
+			else if (typeTxt.equals("time")) {
+				JsonNode gameNode = dataNode.get("game"); JsonNode timeNode = dataNode.get("time");
+				if (gameNode == null) {
+					user.tell(WebSockServ.MSG_ERR, "Game not specified");
+				}
+				else if (timeNode == null) {
+					user.tell(WebSockServ.MSG_ERR, "Time not specified");
+				}
+				else {
+					String gameTitle = gameNode.asText(); MoleGame game = games.get(gameTitle);
+					if (game == null) {
+						user.tell(WebSockServ.MSG_ERR, "Game not found: " + gameTitle);
+					}
+					else {
+						if (game.getCreator().equals(user)) {
+							int time = timeNode.asInt();
+							if (time > 0 && time < 999) {
+								game.setMoveTime(time);
+								game.spam("New Time Control: " + time + " seconds per move");
+							}
+							else {
+								user.tell(WebSockServ.MSG_ERR, "Invalid Time: " + time);
+							}
+						}
+						else {
+							user.tell(WebSockServ.MSG_ERR, "Only the creator of this game can set the time");
+						}
+					}
+				}
+			}
 			else if (typeTxt.equals("top")) {
 				user.tell("top",getTopPlayers(Integer.parseInt(dataTxt)));
 			}

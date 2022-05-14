@@ -434,6 +434,7 @@ public class MoleGame implements Runnable {
     	if (seconds > 0) {
     		ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
     		node.put("seconds",seconds);
+			node.put("max_seconds",moveTime);
     		node.put("turn",turn);
     		node.put("title",title);
     		spam("countdown",node);
