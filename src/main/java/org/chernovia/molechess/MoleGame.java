@@ -24,6 +24,7 @@ public class MoleGame implements Runnable {
 			ObjectNode moveNode = MoleServ.OBJ_MAPPER.createObjectNode();
 			moveNode.put("from", move.getFrom().value());
 			moveNode.put("to", move.getTo().value());
+			moveNode.put("san",move.getSan());
 			node.set("move", moveNode);
 			return node;
 		}
@@ -433,8 +434,7 @@ public class MoleGame implements Runnable {
     	boolean timeout = true;
     	if (seconds > 0) {
     		ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
-    		node.put("seconds",seconds);
-			node.put("max_seconds",moveTime);
+    		node.put("seconds",seconds); //node.put("max_seconds",moveTime);
     		node.put("turn",turn);
     		node.put("title",title);
     		spam("countdown",node);
@@ -540,6 +540,16 @@ public class MoleGame implements Runnable {
   
     private boolean addMoveVote(MolePlayer player, Move move) {
     	if (board.legalMoves().contains(move)) {
+			Piece piece = board.getPiece(move.getFrom()); boolean castling = false;
+			if (piece.equals(Piece.BLACK_KING) && move.getFrom().equals(Square.E8)) {
+				if (move.getTo().equals(Square.G8)) { move.setSan("0-0"); castling = true; }
+				else if (move.getTo().equals(Square.C8)) { move.setSan("0-0-0"); castling = true; }
+			}
+			else if (piece.equals(Piece.WHITE_KING) && move.getFrom().equals(Square.E1)) {
+				if (move.getTo().equals(Square.G1)) { move.setSan("0-0"); castling = true; }
+				else if (move.getTo().equals(Square.C1)) { move.setSan("0-0-0"); castling = true; }
+			}
+			if (!castling) move.setSan(piece.getSanSymbol() + move.getTo().value().toLowerCase());
     		player.move = move;
     		if (countMoveVotes(player.color) >= activePlayers(turn,true)) gameThread.interrupt();
         	return true;
