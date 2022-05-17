@@ -14,8 +14,6 @@ import org.chernovia.lib.zugserv.web.WebSockServ;
 import org.chernovia.utils.CommandLineParser;
 
 import java.io.InputStream;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,7 +60,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private long startTime;
     private boolean running = false;
     private boolean testing = false;
-    private MoleBase moleBase;
+    private final MoleBase moleBase;
 
     public static void main(String[] args) { //MoleGame.getRandomNames("resources/molenames.txt");
         new MoleServ(5555, args).start();
@@ -82,8 +80,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         serv = (ZugServ) new WebSockServ(port, this);
         serv.startSrv();
         startTime = System.currentTimeMillis();
-        String[] dbuser = parser.getArgumentValue("dbuser");
-        String[] dbpass = parser.getArgumentValue("dbpass");
+        final String[] dbuser = parser.getArgumentValue("dbuser");
+        final String[] dbpass = parser.getArgumentValue("dbpass");
         if (dbuser != null && dbpass != null) {
             moleBase = new MoleBase("localhost:3306",
                     dbuser[0], dbpass[0], "molechess");
@@ -96,28 +94,29 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private void addUserData(MoleUser user) {
         moleBase.makeQuery(
                         "INSERT INTO `players` (`Name`, `Wins`, `Losses`, `Rating`, `DateCreated`, `About`) " +
-                                "VALUES ('" + user.name + "', '0', '0', '1600', CURRENT_TIMESTAMP, '')")
-                .ifPresent(MoleBase.MoleQuery::runUpdate);
+                                "VALUES (?, '0', '0', '1600', CURRENT_TIMESTAMP, '')")
+                .ifPresent(query -> {
+                    query.runUpdate(statement -> {
+                        statement.setString(1, user.name);
+                    });
+                });
     }
 
     private Optional<MoleUser.MoleData> refreshAndGetUserData(MoleUser user) {
         if (user.getConn() == null) return Optional.empty();
-        moleBase.makeQuery(
-                        "SELECT * FROM `players` WHERE Name='" + user.name + "'")
-                .ifPresent(it -> {
-                    try (ResultSet rs = it.runQuery()) {
-                        if (rs.next()) {
-                            user.setData(
-                                    rs.getInt("Wins"), rs.getInt("Losses"),
-                                    rs.getInt("Rating"), rs.getString("About"));
-                        }
-                    } catch (SQLException e) {
-                        log(Level.SEVERE, e.getMessage());
-                    } finally {
-                        it.cleanup();
-                    }
-                });
-        return user.getData();
+        return moleBase.makeQuery(
+                        "SELECT * FROM `players` WHERE Name=?")
+                .flatMap(it -> it.withResultSet(statement -> {
+                    statement.setString(1, user.name);
+                }).flatMap(wrs -> wrs.mapResultSet(rs -> {
+                            if (rs.next()) {
+                                user.setData(
+                                        rs.getInt("Wins"), rs.getInt("Losses"),
+                                        rs.getInt("Rating"), rs.getString("About"));
+                            }
+                            return user.getData();
+                        })
+                ));
     }
 
     public void updateUserData(ArrayList<MolePlayer> winners, ArrayList<MolePlayer> losers, boolean draw) {
@@ -148,44 +147,50 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 
     private void updateUserRating(MoleUser user, int newRating, boolean winner) {
         moleBase.makeQuery(
-                        "UPDATE `players` SET Rating='" + newRating + "' WHERE Name='" + user.name + "'")
+                        "UPDATE `players` SET Rating=? WHERE Name=?")
                 .ifPresent(query -> {
-                    query.runUpdate();
-                    user.getData().ifPresent(data -> {
-                        user.tell("Rating change: " + data.rating + " -> " + newRating);
-                        if (winner) {
-                            query.setQueryString("UPDATE `players` SET Wins='" + (data.wins + 1) +
-                                    "' WHERE Name='" + user.name + "'");
-                        } else {
-                            query.setQueryString("UPDATE `players` SET Losses='" + (data.losses + 1) +
-                                    "' WHERE Name='" + user.name + "'");
-                        }
-                        query.runUpdate();
+                    query.runUpdate(statement -> {
+                        statement.setInt(1, newRating);
+                        statement.setString(2, user.name);
                     });
                 });
-    }
-
-    private Optional<ArrayNode> getTopPlayers(int n) {
-        Optional<MoleBase.MoleQuery> query = moleBase.makeQuery(
-                "SELECT * FROM players ORDER BY Rating DESC LIMIT " + n);
-        return query.flatMap(q -> {
-            try (ResultSet rs = q.runQuery()) {
-                if (rs != null) {
-                    ArrayNode playlist = OBJ_MAPPER.createArrayNode();
-                    while (rs.next()) {
-                        ObjectNode node = OBJ_MAPPER.createObjectNode();
-                        node.put("name", rs.getString("Name"));
-                        node.put("rating", rs.getInt("Rating"));
-                        playlist.add(node);
-                    }
-                    return Optional.of(playlist);
-                }
-                return Optional.empty();
-            } catch (SQLException e) {
-                log(Level.WARNING, e.getMessage());
-                return Optional.empty();
+        user.getData().ifPresent(data -> {
+            user.tell("Rating change: " + data.rating + " -> " + newRating);
+            if (winner) {
+                moleBase.makeQuery("UPDATE `players` SET Wins=? WHERE Name=?")
+                        .ifPresent(query -> {
+                            query.runUpdate(statement -> {
+                                statement.setInt(1, data.wins + 1);
+                                statement.setString(2, user.name);
+                            });
+                        });
+            } else {
+                moleBase.makeQuery("UPDATE `players` SET Losses=? WHERE Name=?")
+                        .ifPresent(query -> {
+                            query.runUpdate(statement -> {
+                                statement.setInt(1, data.losses + 1);
+                                statement.setString(2, user.name);
+                            });
+                        });
             }
         });
+    }
+
+    private Optional<ArrayNode> getTopPlayers(int n) { // TODO: Split into 2 functions
+        return moleBase.makeQuery("SELECT * FROM players ORDER BY Rating DESC LIMIT ?").flatMap(q ->
+                q.withResultSet(statement -> {
+                    statement.setInt(1, n);
+                }).flatMap(wrs -> wrs.mapResultSet(rs -> {
+                            ArrayNode playlist = OBJ_MAPPER.createArrayNode();
+                            while (rs.next()) {
+                                ObjectNode node = OBJ_MAPPER.createObjectNode();
+                                node.put("name", rs.getString("Name"));
+                                node.put("rating", rs.getInt("Rating"));
+                                playlist.add(node);
+                            }
+                            return Optional.of(playlist);
+                        })
+                ));
     }
 
     public JsonNode toJSON() {
