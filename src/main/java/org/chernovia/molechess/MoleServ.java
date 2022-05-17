@@ -9,13 +9,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.InputStream;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.ConcurrentModificationException;
-import java.util.List;
-import java.util.Map;
-import java.util.Scanner;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -25,14 +21,8 @@ import org.chernovia.lib.zugserv.*;
 import org.chernovia.lib.zugserv.web.*;
 import org.chernovia.utils.CommandLineParser;
 
-//TODO: how do I export to pgn?
-//sounds for turn, custom time controls, clearer clock, clearer PGN/movelist
-//update player leaving
-//ai voting
-//50 move rule draws
-//Double Mole Role?
-//Inspector Role?
-//Takebacker Role?
+//TODO:
+//Double Mole/Inspector/Takebacker Role?
 //~ornicar2: you need to use a ConcurrentHashMap
 //~Defecting Mole rating change bug
 //~handle AWOL team members
@@ -45,6 +35,10 @@ import org.chernovia.utils.CommandLineParser;
 //~how do I spectate that game?
 //~empty/pregame board timeouts
 //~handle logins with same token
+//~update player leaving
+//~ai voting
+//~50 move rule draws
+//~how do I export to pgn?
 //
 public class MoleServ extends Thread implements ConnListener, MoleListener {
 	static final String VERSION = "0.1"; 
@@ -60,7 +54,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 	private ConcurrentHashMap<String, MoleGame> games = new ConcurrentHashMap<>();
 	private ZugServ serv;
 	private int purgeFreq = 30, maxUserGames = 3, defMoveTime = 12;
-	private long startTime; 
+	private long startTime;
 	private boolean running = false;
 	private boolean testing = false;
 	private MoleBase moleBase;
@@ -82,9 +76,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		log("Constructing MoleServ on port: " + port);
 		serv = (ZugServ)new WebSockServ(port, this);
 		serv.startSrv();
-		startTime = System.currentTimeMillis();
+		startTime = System.currentTimeMillis(); //- 9999999;
 		moleBase = new MoleBase("localhost:3306",
-		parser.getArgumentValue("dbuser")[0],parser.getArgumentValue("dbpass")[0],"molechess");
+		parser.getArgumentValue("dbuser")[0],
+				parser.getArgumentValue("dbpass")[0],"molechess");
 	}
 	
 	private void addUserData(MoleUser user) {
@@ -104,7 +99,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 		try {
 			if (rs != null && rs.next()) {
 				user.setData(
-					rs.getInt("Wins"),rs.getInt("Losses"),rs.getInt("Rating"),rs.getString("About"));
+					rs.getInt("Wins"),rs.getInt("Losses"),
+					rs.getInt("Rating"),rs.getString("About"));
 				query.cleanup(); return user.getData();
 			}
 		}
@@ -420,13 +416,18 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			user.tell(WebSockServ.MSG_ERR,"Error: null command");
 		}		
 		else switch (cmdNode.get("cmd").asText()) {
+			case "ver":
+			case "version":
+				user.tell(WebSockServ.MSG_SERV,"Version: " + VERSION); break;
 			case "info":
 				user.tell("info",this.toJSON()); break;
+			case "players":
 			case "who":
 				user.tell("users",this.toJSON()); break;
+			case "up":
 			case "uptime":
 				user.tell(WebSockServ.MSG_SERV,
-						"Uptime: " + ((System.currentTimeMillis() - startTime) / 1000)); break;
+				"Uptime: " + timeString(System.currentTimeMillis() - startTime)); break;
 			case "finger":
 				user.tell(WebSockServ.MSG_SERV,refreshUserData(user).toString()); break;
 			default: user.tell(WebSockServ.MSG_ERR,"Error: command not found");
@@ -590,6 +591,33 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 			return names;
 		} finally {
 			log("Names: " + names.size());
+		}
+	}
+
+	public static String timeString(long millis) {
+		int seconds = (int)(millis/1000);
+		if (seconds < 60) {
+			return seconds + " seconds";
+		}
+		else {
+			int minutes = seconds/60;
+			int remainder_seconds = seconds - (minutes * 60);
+			if (minutes < 60) {
+				return minutes + " minutes and " + remainder_seconds + " seconds";
+			}
+			else {
+				int hours = minutes/60;
+				int remainder_minutes = minutes - (hours * 60);
+				if (hours < 24) {
+					return hours + " hours, " + remainder_minutes + " minutes and " + remainder_seconds + " seconds";
+				}
+				else {
+					int days = hours/24;
+					int remainder_hours = hours - (days * 24);
+					return days + " days, " + remainder_hours + " hours, " +
+					remainder_minutes + " minutes and " + remainder_seconds + " seconds";
+				}
+			}
 		}
 	}
 }
