@@ -22,14 +22,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
-//TODO: how do I export to pgn?
-//sounds for turn, custom time controls, clearer clock, clearer PGN/movelist
-//update player leaving
-//ai voting
-//50 move rule draws
-//Double Mole Role?
-//Inspector Role?
-//Takebacker Role?
+//TODO:
+//Double Mole/Inspector/Takebacker Role?
 //~ornicar2: you need to use a ConcurrentHashMap
 //~Defecting Mole rating change bug
 //~handle AWOL team members
@@ -42,6 +36,10 @@ import java.util.regex.Pattern;
 //~how do I spectate that game?
 //~empty/pregame board timeouts
 //~handle logins with same token
+//~update player leaving
+//~ai voting
+//~50 move rule draws
+//~how do I export to pgn?
 //
 public class MoleServ extends Thread implements ConnListener, MoleListener {
     static final String VERSION = "0.1";
@@ -432,25 +430,27 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private void handleCmd(MoleUser user, JsonNode cmdNode) {
         JsonNode cmd = cmdNode.get("cmd");
         if (cmd.isNull()) {
-            user.tell(WebSockServ.MSG_ERR, "Error: null command");
-        } else switch (cmdNode.get("cmd").asText()) {
+            user.tell(WebSockServ.MSG_ERR,"Error: null command");
+        }
+        else switch (cmdNode.get("cmd").asText()) {
+            case "ver":
+            case "version":
+                user.tell(WebSockServ.MSG_SERV,"Version: " + VERSION); break;
             case "info":
-                user.tell("info", this.toJSON());
-                break;
+                user.tell("info",this.toJSON()); break;
+            case "players":
             case "who":
-                user.tell("users", this.toJSON());
-                break;
+                user.tell("users",this.toJSON()); break;
+            case "up":
             case "uptime":
                 user.tell(WebSockServ.MSG_SERV,
-                        "Uptime: " + ((System.currentTimeMillis() - startTime) / 1000));
-                break;
+                        "Uptime: " + timeString(System.currentTimeMillis() - startTime)); break;
             case "finger":
                 refreshAndGetUserData(user).ifPresent(it -> {
                     user.tell(WebSockServ.MSG_SERV, it.toString());
                 });
                 break;
-            default:
-                user.tell(WebSockServ.MSG_ERR, "Error: command not found");
+            default: user.tell(WebSockServ.MSG_ERR,"Error: command not found");
         }
     }
 
@@ -614,19 +614,46 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     }
 
     public static List<String> loadRandomNames(final String filename) {
-        List<String> names = new ArrayList<>();
-        try { //System.out.println("Working Directory = " + System.getProperty("user.dir"));
-            InputStream stream = MoleServ.class.getResourceAsStream("/" + filename);
-            Scanner scanner = new Scanner(stream);
-            while (scanner.hasNextLine()) names.add(scanner.nextLine());
-            scanner.close();
-            return names;
-        } catch (Exception e) {
-            e.printStackTrace();
-            names = Arrays.asList("Steinitz", "Lasker", "Capablanca", "Karpov", "Kasparov");
-            return names;
-        } finally {
-            log("Names: " + names.size());
-        }
-    }
+		List<String> names = new ArrayList<>();
+		try { //System.out.println("Working Directory = " + System.getProperty("user.dir"));
+			InputStream stream = MoleServ.class.getResourceAsStream("/" + filename);
+			Scanner scanner = new Scanner(stream);
+			while (scanner.hasNextLine()) names.add(scanner.nextLine());
+			scanner.close();
+			return names;
+		} catch (Exception e) {
+			e.printStackTrace();
+			names = Arrays.asList("Steinitz", "Lasker", "Capablanca", "Karpov", "Kasparov");
+			return names;
+		} finally {
+			log("Names: " + names.size());
+		}
+	}
+
+	public static String timeString(long millis) {
+		int seconds = (int)(millis/1000);
+		if (seconds < 60) {
+			return seconds + " seconds";
+		}
+		else {
+			int minutes = seconds/60;
+			int remainder_seconds = seconds - (minutes * 60);
+			if (minutes < 60) {
+				return minutes + " minutes and " + remainder_seconds + " seconds";
+			}
+			else {
+				int hours = minutes/60;
+				int remainder_minutes = minutes - (hours * 60);
+				if (hours < 24) {
+					return hours + " hours, " + remainder_minutes + " minutes and " + remainder_seconds + " seconds";
+				}
+				else {
+					int days = hours/24;
+					int remainder_hours = hours - (days * 24);
+					return days + " days, " + remainder_hours + " hours, " +
+					remainder_minutes + " minutes and " + remainder_seconds + " seconds";
+				}
+			}
+		}
+	}
 }
