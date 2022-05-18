@@ -1,6 +1,5 @@
 package org.chernovia.lib.chess;
 
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -21,7 +20,6 @@ public class StockPlug {
     /**
      * Starts Stockfish engine as a process and initializes it
      *
-     * @param None
      * @return True on success. False otherwise
      */
     public boolean startEngine(String path) {
