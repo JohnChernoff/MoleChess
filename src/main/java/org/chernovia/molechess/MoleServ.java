@@ -104,9 +104,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         if (user.getConn() == null) return Optional.empty();
         return moleBase.makeQuery(
                         "SELECT * FROM `players` WHERE Name=?")
-                .flatMap(it -> it.withResultSet(statement -> {
-                    statement.setString(1, user.name);
-                }).flatMap(wrs -> wrs.mapResultSet(rs -> {
+                .flatMap(it -> it.mapResultSet(statement -> {
+                            statement.setString(1, user.name);
+                        }, rs -> {
                             if (rs.next()) {
                                 user.setData(
                                         rs.getInt("Wins"), rs.getInt("Losses"),
@@ -114,7 +114,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                             }
                             return user.getData();
                         })
-                ));
+                );
     }
 
     public void updateUserData(ArrayList<MolePlayer> winners, ArrayList<MolePlayer> losers, boolean draw) {
@@ -154,41 +154,29 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 });
         user.getData().ifPresent(data -> {
             user.tell("Rating change: " + data.rating + " -> " + newRating);
-            if (winner) {
-                moleBase.makeQuery("UPDATE `players` SET Wins=? WHERE Name=?")
-                        .ifPresent(query -> {
-                            query.runUpdate(statement -> {
-                                statement.setInt(1, data.wins + 1);
-                                statement.setString(2, user.name);
-                            });
-                        });
-            } else {
-                moleBase.makeQuery("UPDATE `players` SET Losses=? WHERE Name=?")
-                        .ifPresent(query -> {
-                            query.runUpdate(statement -> {
-                                statement.setInt(1, data.losses + 1);
-                                statement.setString(2, user.name);
-                            });
-                        });
-            }
+            moleBase.makeQuery("UPDATE `players` SET " + (winner ? "Wins" : "Losses") + "=? WHERE Name=?")
+                    .ifPresent(query -> query.runUpdate(statement -> {
+                        statement.setInt(1, winner ? data.wins : data.losses + 1);
+                        statement.setString(2, user.name);
+                    }));
         });
     }
 
     private Optional<ArrayNode> getTopPlayers(int n) { // TODO: Split into 2 functions
-        return moleBase.makeQuery("SELECT * FROM players ORDER BY Rating DESC LIMIT ?").flatMap(q ->
-                q.withResultSet(statement -> {
+        return moleBase.makeQuery("SELECT * FROM players ORDER BY Rating DESC LIMIT ?").flatMap(query ->
+                query.mapResultSet(statement -> {
                     statement.setInt(1, n);
-                }).flatMap(wrs -> wrs.mapResultSet(rs -> {
-                            ArrayNode playlist = OBJ_MAPPER.createArrayNode();
-                            while (rs.next()) {
-                                ObjectNode node = OBJ_MAPPER.createObjectNode();
-                                node.put("name", rs.getString("Name"));
-                                node.put("rating", rs.getInt("Rating"));
-                                playlist.add(node);
-                            }
-                            return Optional.of(playlist);
-                        })
-                ));
+                }, rs -> {
+                    ArrayNode playlist = OBJ_MAPPER.createArrayNode();
+                    while (rs.next()) {
+                        ObjectNode node = OBJ_MAPPER.createObjectNode();
+                        node.put("name", rs.getString("Name"));
+                        node.put("rating", rs.getInt("Rating"));
+                        playlist.add(node);
+                    }
+                    return Optional.of(playlist);
+                })
+        );
     }
 
     public JsonNode toJSON() {

@@ -9,7 +9,7 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 
 public class MoleBase {
-    class MoleQuery {
+    static class MoleQuery {
         private final String statement;
         private final PreparedStatement preparedStatement;
         private final ResultSet resultSet;
@@ -30,7 +30,7 @@ public class MoleBase {
             this.conn = conn;
         }
 
-        public Optional<MoleQuery> withResultSet(final StatementInitializer init) {
+        private Optional<MoleQuery> withResultSet(final StatementInitializer init) {
             return prepareStatement(init).flatMap(s ->
                     runQuery(s).flatMap(q ->
                             Optional.of(new MoleQuery(this.statement, s, q, this.conn))));
@@ -40,17 +40,17 @@ public class MoleBase {
             return Optional.ofNullable(this.resultSet);
         }
 
-        public <R> Optional<R> mapResultSet(final ResultSetMapper<R> mapper) {
-            return getResultSet().flatMap(rs -> {
+        public <R> Optional<R> mapResultSet(final StatementInitializer init, final ResultSetMapper<R> mapper) {
+            return withResultSet(init).flatMap(it -> it.getResultSet().flatMap(rs -> {
                 try {
                     return mapper.map(rs);
                 } catch (SQLException ex) {
-                    logException(ex);
+                    logSQLException(ex);
                     return Optional.empty();
                 } finally {
-                    cleanup();
+                    it.cleanup();
                 }
-            });
+            }));
         }
 
         private Optional<PreparedStatement> prepareStatement(final StatementInitializer init) {
@@ -59,7 +59,7 @@ public class MoleBase {
                 init.setVariables(preparedStatement);
                 return Optional.of(preparedStatement);
             } catch (SQLException e) {
-                logException(e);
+                logSQLException(e);
                 cleanup();
                 return Optional.empty();
             }
@@ -69,7 +69,7 @@ public class MoleBase {
             try {
                 return Optional.of(statement.executeQuery());
             } catch (SQLException e) {
-                logException(e);
+                logSQLException(e);
                 cleanup();
                 return Optional.empty();
             }
@@ -85,7 +85,7 @@ public class MoleBase {
         }
 
         public void runUpdate(final StatementInitializer varSetter) {
-            runUpdate(varSetter, MoleBase::logException);
+            runUpdate(varSetter, MoleBase::logSQLException);
         }
 
         private void cleanup() {
@@ -93,14 +93,14 @@ public class MoleBase {
                 try {
                     preparedStatement.close();
                 } catch (SQLException e) {
-                    logException(e);
+                    logSQLException(e);
                 }
             }
             if (resultSet != null) {
                 try {
                     resultSet.close();
                 } catch (SQLException e) {
-                    logException(e);
+                    logSQLException(e);
                 }
             }
         }
@@ -112,7 +112,7 @@ public class MoleBase {
         conn = connect(uri, usr, pwd, db);
     }
 
-    public Connection connect(String uri, String usr, String pwd, String db) {
+    private Connection connect(String uri, String usr, String pwd, String db) {
         try {
             String connStr = "jdbc:mysql://" + uri +
                     "/" + db +
@@ -120,20 +120,20 @@ public class MoleBase {
                     "&password=" + pwd;
             return DriverManager.getConnection(connStr);
         } catch (SQLException ex) {
-            logException(ex);
+            logSQLException(ex);
             return null;
         }
     }
 
-    public Optional<Connection> getConn() {
+    private Optional<Connection> getConn() {
         return Optional.ofNullable(conn);
     }
 
     public Optional<MoleQuery> makeQuery(final String queryStr) {
-        return getConn().flatMap(it -> Optional.of(new MoleQuery(queryStr, it)));
+        return getConn().flatMap(conn -> Optional.of(new MoleQuery(queryStr, conn)));
     }
 
-    private static void logException(SQLException e) {
+    private static void logSQLException(SQLException e) {
         MoleServ.log(Level.SEVERE, "SQLException: " + e.getMessage());
         MoleServ.log(Level.SEVERE, "SQLState: " + e.getSQLState());
         MoleServ.log(Level.SEVERE, "VendorError: " + e.getErrorCode());
