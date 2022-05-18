@@ -539,7 +539,7 @@ public class MoleGame implements Runnable {
         do {
             int p = (int) Math.floor(Math.random() * teams[color].players.size());
             player = teams[color].players.get(p);
-        } while (onlyHuman(player));
+        } while (onlyHuman(player)); //humans cannot be a mole with all-AI teammates
         player.role = MolePlayer.ROLE.MOLE;
         player.user.tell("You're the mole!");
         player.user.tell("mole", "");
