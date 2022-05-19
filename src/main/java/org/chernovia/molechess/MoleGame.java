@@ -313,16 +313,18 @@ public class MoleGame implements Runnable {
     }
 
     public void voteMove(MolePlayer player, String movestr) {
+        final Move move = getMove(movestr);
+        final String san = getSan(move, player.color);
         if (phase != GAME_PHASE.VOTING) {
             update(player.user, new MoleResult(false, "Bad phase: " + phase));
         } else if (player.color != turn) {
             update(player.user, new MoleResult(false, "Current turn: " + colorString(turn)));
         } else if (player.votedOff) {
             update(player.user, new MoleResult(false, "Sorry, you've been voted off"));
-        } else if (addMoveVote(player, getMove(movestr))) {
-            update(new MoleResult(player.user.name + " votes: " + movestr));
+        } else if (addMoveVote(player, move)) {
+            update(new MoleResult(player.user.name + " votes: " + san));
         } else {
-            update(player.user, new MoleResult(false, "Bad Move: " + movestr));
+            update(player.user, new MoleResult(false, "Bad Move: " + san));
         }
     }
 
@@ -386,7 +388,7 @@ public class MoleGame implements Runnable {
                 }
                 if (makeMove(move).success) {
                     moveHistory.add(getMoveVotes(turn, board.getFen(), move));
-                    update(new MoleResult("Selected Move: " + move), true);
+                    update(new MoleResult("Selected Move: " + move.getSan()), true);
                     if (playing) {
                         clearMoveVotes(turn);
                         turn = getNextTurn();
@@ -573,11 +575,11 @@ public class MoleGame implements Runnable {
     }
 
     private String listMoves(int color) {
-        String list = "";
-        for (MolePlayer player : teams[color].players) {
-            if (player.move != null) list += (player.user.name + ": " + player.move + "\n");
-        }
-        return list;
+        return teams[color].players
+                .stream()
+                .filter(player -> player.move != null)
+                .map(player -> player.user.name + ": " + player.move.getSan() + "\n")
+                .reduce("", (acc, p) -> acc + p);
     }
 
     private Move pickMove(List<Move> moves) {
@@ -585,32 +587,51 @@ public class MoleGame implements Runnable {
         return moves.get(n);
     }
 
-    private boolean addMoveVote(MolePlayer player, Move move) {
+    private boolean conflictsExist(Piece piece, Square to) {
+        return board.getPieceLocation(piece)
+                .stream()
+                .map(square -> new Move(square.value() + to.value(), board.getSideToMove()))
+                .filter(move -> board.legalMoves().contains(move))
+                .count() > 1;
+    }
+
+    private String getSan(final Move move, final int color) {
         if (board.legalMoves().contains(move)) {
+            final Board auxBoard = board.clone();
+            auxBoard.doMove(move);
             Piece piece = board.getPiece(move.getFrom());
-            boolean castling = false;
+            final String ending = auxBoard.isMated() ? "#" : auxBoard.isKingAttacked() ? "+" : "";
             if (piece.equals(Piece.BLACK_KING) && move.getFrom().equals(Square.E8)) {
                 if (move.getTo().equals(Square.G8)) {
-                    move.setSan("0-0");
-                    castling = true;
+                    return "0-0" + ending;
                 } else if (move.getTo().equals(Square.C8)) {
-                    move.setSan("0-0-0");
-                    castling = true;
+                    return "0-0-0" + ending;
                 }
             } else if (piece.equals(Piece.WHITE_KING) && move.getFrom().equals(Square.E1)) {
                 if (move.getTo().equals(Square.G1)) {
-                    move.setSan("0-0");
-                    castling = true;
+                    return "0-0" + ending;
                 } else if (move.getTo().equals(Square.C1)) {
-                    move.setSan("0-0-0");
-                    castling = true;
+                    return "0-0-0" + ending;
                 }
             }
-            if (!castling) move.setSan(piece.getSanSymbol() + move.getTo().value().toLowerCase());
-            player.move = move;
-            if (countMoveVotes(player.color) >= activePlayers(turn, true)) gameThread.interrupt();
-            return true;
-        } else return false;
+            final String takes = (board.getPiece(move.getTo()).getPieceSide() == null || board.getPiece(move.getTo()).getPieceSide().ordinal() != color) ? "" : "x";
+            final String promotion = move.getPromotion() != Piece.NONE ? "=" + move.getPromotion().getSanSymbol() : "";
+            final String from = conflictsExist(piece, move.getTo()) ? move.getFrom().value().toLowerCase() : "";
+            final String to = move.getTo().value().toLowerCase();
+            final String sanSymbol = (piece.getSanSymbol().equals("") && takes.equals("x") && from.equals("")) ?
+                    move.getFrom().value().toLowerCase().substring(0, 1) : piece.getSanSymbol();
+            return sanSymbol + from + takes + to + promotion + ending;
+        }
+        return "";
+    }
+
+    private boolean addMoveVote(final MolePlayer player, final Move move) {
+        final String san = getSan(move, player.color);
+        if (san.equals("")) return false;
+        move.setSan(san);
+        player.move = move;
+        if (countMoveVotes(player.color) >= activePlayers(turn, true)) gameThread.interrupt();
+        return true;
     }
 
     private int countMoveVotes(int color) {
