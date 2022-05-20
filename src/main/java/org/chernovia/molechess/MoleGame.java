@@ -3,17 +3,15 @@ package org.chernovia.molechess;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.github.bhlangonijr.chesslib.Board;
-import com.github.bhlangonijr.chesslib.Piece;
-import com.github.bhlangonijr.chesslib.Side;
-import com.github.bhlangonijr.chesslib.Square;
+import com.github.bhlangonijr.chesslib.*;
 import com.github.bhlangonijr.chesslib.move.Move;
 
 import java.awt.*;
-import java.util.ArrayList;
-import java.util.ConcurrentModificationException;
-import java.util.HashMap;
 import java.util.List;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class MoleGame implements Runnable {
 
@@ -127,6 +125,7 @@ public class MoleGame implements Runnable {
     private boolean endOnAccusation = false;
     private boolean defection = true;
     private float currentGUIHue = (float) Math.random();
+    public static final Pattern VALID_MOVE_PATTERN = Pattern.compile("[a-h][1-8][a-h][1-8]");
 
     public MoleGame(MoleUser c, String t, MoleListener l) {
         creator = c;
@@ -312,20 +311,21 @@ public class MoleGame implements Runnable {
         } else voteMove(player, movestr);
     }
 
-    public void voteMove(MolePlayer player, String movestr) {
-        final Move move = getMove(movestr);
-        final String san = getSan(move, player.color);
-        if (phase != GAME_PHASE.VOTING) {
-            update(player.user, new MoleResult(false, "Bad phase: " + phase));
-        } else if (player.color != turn) {
-            update(player.user, new MoleResult(false, "Current turn: " + colorString(turn)));
-        } else if (player.votedOff) {
-            update(player.user, new MoleResult(false, "Sorry, you've been voted off"));
-        } else if (addMoveVote(player, move)) {
-            update(new MoleResult(player.user.name + " votes: " + san));
-        } else {
-            update(player.user, new MoleResult(false, "Bad Move: " + san));
-        }
+    public void voteMove(final MolePlayer player, final String moveStr) {
+        getMove(moveStr).ifPresentOrElse(move -> {
+                    if (phase != GAME_PHASE.VOTING) {
+                        update(player.user, new MoleResult(false, "Bad phase: " + phase));
+                    } else if (player.color != turn) {
+                        update(player.user, new MoleResult(false, "Current turn: " + colorString(turn)));
+                    } else if (player.votedOff) {
+                        update(player.user, new MoleResult(false, "Sorry, you've been voted off"));
+                    } else if (addMoveVote(player, move)) {
+                        update(new MoleResult(player.user.name + " votes: " + move.getSan()));
+                    } else {
+                        update(player.user, new MoleResult(false, "Bad Move: " + moveStr));
+                    }
+                }, () -> update(player.user, new MoleResult(false, "Bad Move: " + moveStr))
+        );
     }
 
     //TODO: fix weird name voting bug
@@ -587,12 +587,27 @@ public class MoleGame implements Runnable {
         return moves.get(n);
     }
 
-    private boolean conflictsExist(Piece piece, Square to) {
-        return board.getPieceLocation(piece)
+    private String getFrom(final Piece piece, final Square from, final Square to) {
+        if (piece.getPieceType() == PieceType.PAWN || piece.getPieceType() == PieceType.NONE) {
+            return "";
+        }
+        final List<Move> conflictingMoves = board.getPieceLocation(piece)
                 .stream()
                 .map(square -> new Move(square.value() + to.value(), board.getSideToMove()))
-                .filter(move -> board.legalMoves().contains(move))
-                .count() > 1;
+                .filter(move -> board.legalMoves().contains(move) && move.getFrom() != from)
+                .collect(Collectors.toList());
+        if (conflictingMoves.size() < 1) {
+            return "";
+        }
+        final boolean conflictOnFile = conflictingMoves.stream().map(move -> move.getFrom().getFile()).anyMatch(file -> file == from.getFile());
+        final boolean conflictOnRank = conflictingMoves.stream().map(move -> move.getFrom().getRank()).anyMatch(rank -> rank == from.getRank());
+        if (conflictOnFile && conflictOnRank) {
+            return from.value();
+        } else if (conflictOnFile) {
+            return from.value().substring(1, 2);
+        } else {
+            return from.value().substring(0, 1);
+        }
     }
 
     private String getSan(final Move move, final int color) {
@@ -616,10 +631,10 @@ public class MoleGame implements Runnable {
             }
             final String takes = (board.getPiece(move.getTo()).getPieceSide() == null || board.getPiece(move.getTo()).getPieceSide().ordinal() != color) ? "" : "x";
             final String promotion = move.getPromotion() != Piece.NONE ? "=" + move.getPromotion().getSanSymbol() : "";
-            final String from = conflictsExist(piece, move.getTo()) ? move.getFrom().value().toLowerCase() : "";
+            final String from = getFrom(piece, move.getFrom(), move.getTo()).toLowerCase();
             final String to = move.getTo().value().toLowerCase();
             final String sanSymbol = (piece.getSanSymbol().equals("") && takes.equals("x") && from.equals("")) ?
-                    move.getFrom().value().toLowerCase().substring(0, 1) : piece.getSanSymbol();
+                    move.getFrom().value().substring(0, 1).toLowerCase() : piece.getSanSymbol();
             return sanSymbol + from + takes + to + promotion + ending;
         }
         return "";
@@ -672,14 +687,12 @@ public class MoleGame implements Runnable {
         return new MoveVotes(voteList, fen, color);
     }
 
-    private Move getMove(String movestr) {
-        try {
-            final String sanitizedMovestr = movestr.replace("\n", "").replace("\r", "");
-            return new Move(sanitizedMovestr, turn == COLOR_BLACK ? Side.BLACK : Side.WHITE);
-        } catch (IllegalArgumentException oops) {
-            log(oops.getMessage());
-            return null;
+    private Optional<Move> getMove(final String moveStr) {
+        final Matcher moveStrMatcher = VALID_MOVE_PATTERN.matcher(moveStr);
+        if (moveStrMatcher.find()) {
+            return Optional.of(new Move(moveStrMatcher.group(), turn == COLOR_BLACK ? Side.BLACK : Side.WHITE));
         }
+        return Optional.empty();
     }
 
     private MoleResult makeMove(Move move) {
