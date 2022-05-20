@@ -1,108 +1,142 @@
 package org.chernovia.molechess;
 
+import org.chernovia.molechess.database.ResultSetMapper;
+import org.chernovia.molechess.database.StatementInitializer;
+
 import java.sql.*;
+import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 
 public class MoleBase {
-    class MoleQuery {
-        private Statement statement = null;
-        private ResultSet resultSet = null;
-        private String queryString;
-        private Connection conn;
+    static class MoleQuery {
+        private final String statement;
+        private final PreparedStatement preparedStatement;
+        private final ResultSet resultSet;
+        private final Connection conn;
 
-        public MoleQuery(String qstr, Connection c) {
-            queryString = qstr;
-            conn = c;
+        public MoleQuery(final String statement, final Connection conn) {
+            this.statement = statement;
+            this.conn = conn;
+            this.preparedStatement = null;
+            this.resultSet = null;
         }
 
-        public ResultSet runQuery() {
+        private MoleQuery(final String statement, final PreparedStatement preparedStatement, final ResultSet resultSet,
+                          final Connection conn) {
+            this.statement = statement;
+            this.resultSet = resultSet;
+            this.preparedStatement = preparedStatement;
+            this.conn = conn;
+        }
+
+        private Optional<MoleQuery> withResultSet(final StatementInitializer init) {
+            return prepareStatement(init).flatMap(s ->
+                    runQuery(s).flatMap(q ->
+                            Optional.of(new MoleQuery(this.statement, s, q, this.conn))));
+        }
+
+        private Optional<ResultSet> getResultSet() {
+            return Optional.ofNullable(this.resultSet);
+        }
+
+        public <R> Optional<R> mapResultSet(final StatementInitializer init, final ResultSetMapper<R> mapper) {
+            return withResultSet(init).flatMap(it -> it.getResultSet().flatMap(rs -> {
+                try {
+                    return mapper.map(rs);
+                } catch (SQLException ex) {
+                    logSQLException(ex);
+                    return Optional.empty();
+                } finally {
+                    it.cleanup();
+                }
+            }));
+        }
+
+        private Optional<PreparedStatement> prepareStatement(final StatementInitializer init) {
             try {
-                statement = conn.createStatement();
-                resultSet = statement.executeQuery(queryString);
-                return resultSet;
-            } catch (SQLException ex) {
-                oops(ex);
+                final PreparedStatement preparedStatement = conn.prepareStatement(statement);
+                init.setVariables(preparedStatement);
+                return Optional.of(preparedStatement);
+            } catch (SQLException e) {
+                logSQLException(e);
+                cleanup();
+                return Optional.empty();
             }
-            return null;
         }
 
-        public int runUpdate() {
-            int status = 0;
+        private Optional<ResultSet> runQuery(final PreparedStatement statement) {
             try {
-                statement = conn.createStatement();
-                status = statement.executeUpdate(queryString);
-            } catch (SQLException ex) {
-                oops(ex);
+                return Optional.of(statement.executeQuery());
+            } catch (SQLException e) {
+                logSQLException(e);
+                cleanup();
+                return Optional.empty();
             }
-            cleanup();
-            return status;
         }
 
-        public void oops(SQLException e) {
-            MoleServ.log(Level.SEVERE, "SQLException: " + e.getMessage());
-            MoleServ.log(Level.SEVERE, "SQLState: " + e.getSQLState());
-            MoleServ.log(Level.SEVERE, "VendorError: " + e.getErrorCode());
+        public void runUpdate(final StatementInitializer varSetter, final Consumer<SQLException> whenFails) {
+            try (final PreparedStatement preparedStatement = conn.prepareStatement(statement)) {
+                varSetter.setVariables(preparedStatement);
+                preparedStatement.executeUpdate();
+            } catch (SQLException e) {
+                whenFails.accept(e);
+            }
         }
 
-        public void setQueryString(String str) {
-            queryString = str;
+        public void runUpdate(final StatementInitializer varSetter) {
+            runUpdate(varSetter, MoleBase::logSQLException);
         }
 
-        public ResultSet getRS() {
-            return resultSet;
-        }
-
-        public void cleanup() {
+        private void cleanup() {
+            if (preparedStatement != null) {
+                try {
+                    preparedStatement.close();
+                } catch (SQLException e) {
+                    logSQLException(e);
+                }
+            }
             if (resultSet != null) {
                 try {
                     resultSet.close();
-                } catch (SQLException sqlEx) {
-                } // ignore
-                resultSet = null;
-            }
-            if (statement != null) {
-                try {
-                    statement.close();
-                } catch (SQLException sqlEx) {
-                } // ignore
-                statement = null;
+                } catch (SQLException e) {
+                    logSQLException(e);
+                }
             }
         }
     }
 
-    Connection conn = null;
+    private final Connection conn;
 
     public MoleBase(String uri, String usr, String pwd, String db) {
         conn = connect(uri, usr, pwd, db);
     }
 
-    public Connection connect(String uri, String usr, String pwd, String db) {
+    private Connection connect(String uri, String usr, String pwd, String db) {
         try {
-            //Class.forName("com.mysql.jdbc.Driver"); //.newInstance();
             String connStr = "jdbc:mysql://" + uri +
                     "/" + db +
                     "?user=" + usr +
                     "&password=" + pwd;
-            //System.out.println("Connection String: " + connStr);
             return DriverManager.getConnection(connStr);
+        } catch (SQLException ex) {
+            logSQLException(ex);
+            return null;
         }
-        //catch(ClassNotFoundException ex) {
-        //   MoleServ.log(Level.SEVERE,"Error: unable to load driver class"); //System.exit(1);
-        //}
-        catch (SQLException ex) {
-            MoleServ.log(Level.SEVERE, "SQLException: " + ex.getMessage());
-            MoleServ.log(Level.SEVERE, "SQLState: " + ex.getSQLState());
-            MoleServ.log(Level.SEVERE, "VendorError: " + ex.getErrorCode());
-        }
-        return null;
     }
 
-    public Connection getConn() {
-        return conn;
+    private Optional<Connection> getConn() {
+        return Optional.ofNullable(conn);
     }
 
-    public MoleQuery makeQuery(String queryStr) {
-        return new MoleQuery(queryStr, conn);
+    public Optional<MoleQuery> makeQuery(final String queryStr) {
+        return getConn().flatMap(conn -> Optional.of(new MoleQuery(queryStr, conn)));
+    }
+
+    private static void logSQLException(SQLException e) {
+        MoleServ.log(Level.SEVERE, "SQLException: " + e.getMessage());
+        MoleServ.log(Level.SEVERE, "SQLState: " + e.getSQLState());
+        MoleServ.log(Level.SEVERE, "VendorError: " + e.getErrorCode());
     }
 
 }

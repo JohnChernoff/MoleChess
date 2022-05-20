@@ -14,11 +14,10 @@ import org.chernovia.lib.zugserv.web.WebSockServ;
 import org.chernovia.utils.CommandLineParser;
 
 import java.io.InputStream;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
@@ -59,7 +58,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private long startTime;
     private boolean running = false;
     private boolean testing = false;
-    private MoleBase moleBase;
+    private final MoleBase moleBase;
 
     public static void main(String[] args) { //MoleGame.getRandomNames("resources/molenames.txt");
         new MoleServ(5555, args).start();
@@ -78,99 +77,106 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         log("Constructing MoleServ on port: " + port);
         serv = (ZugServ) new WebSockServ(port, this);
         serv.startSrv();
-        startTime = System.currentTimeMillis(); //- 9999999;
-        moleBase = new MoleBase("localhost:3306",
-                parser.getArgumentValue("dbuser")[0],
-                parser.getArgumentValue("dbpass")[0], "molechess");
+        startTime = System.currentTimeMillis();
+        final String[] dbuser = parser.getArgumentValue("dbuser");
+        final String[] dbpass = parser.getArgumentValue("dbpass");
+        if (dbuser != null && dbpass != null) {
+            moleBase = new MoleBase("localhost:3306",
+                    dbuser[0], dbpass[0], "molechess");
+        } else {
+            log(Level.WARNING, "DB connection info unspecified - DB functionality disabled");
+            moleBase = new MoleBase(null, null, null, null);
+        }
     }
 
     private void addUserData(MoleUser user) {
-        if (refreshUserData(user) == null) {
-            MoleBase.MoleQuery query = moleBase.makeQuery(
-                    "INSERT INTO `players` (`Name`, `Wins`, `Losses`, `Rating`, `DateCreated`, `About`) " +
-                            "VALUES ('" + user.name + "', '0', '0', '1600', CURRENT_TIMESTAMP, '')");
-            query.runUpdate(); //("Insert Result: " + query.runUpdate());
-        }
+        moleBase.makeQuery(
+                        "INSERT INTO `players` (`Name`, `Wins`, `Losses`, `Rating`, `DateCreated`, `About`) " +
+                                "VALUES (?, '0', '0', '1600', CURRENT_TIMESTAMP, '')")
+                .ifPresent(query -> {
+                    query.runUpdate(statement -> {
+                        statement.setString(1, user.name);
+                    });
+                });
     }
 
-    private MoleUser.MoleData refreshUserData(MoleUser user) {
-        if (user.getConn() == null) return null;
-        MoleBase.MoleQuery query = moleBase.makeQuery(
-                "SELECT * FROM `players` WHERE Name='" + user.name + "'");
-        ResultSet rs = query.runQuery();
-        try {
-            if (rs != null && rs.next()) {
-                user.setData(
-                        rs.getInt("Wins"), rs.getInt("Losses"),
-                        rs.getInt("Rating"), rs.getString("About"));
-                query.cleanup();
-                return user.getData();
-            }
-        } catch (SQLException doh) {
-            log(Level.SEVERE, doh.getMessage());
-        }
-        query.cleanup();
-        return null;
+    private Optional<MoleUser.MoleData> refreshAndGetUserData(MoleUser user) {
+        if (user.getConn() == null) return Optional.empty();
+        return moleBase.makeQuery(
+                        "SELECT * FROM `players` WHERE Name=?")
+                .flatMap(it -> it.mapResultSet(statement -> {
+                            statement.setString(1, user.name);
+                        }, rs -> {
+                            if (rs.next()) {
+                                user.setData(
+                                        rs.getInt("Wins"), rs.getInt("Losses"),
+                                        rs.getInt("Rating"), rs.getString("About"));
+                            }
+                            return user.getData();
+                        })
+                );
     }
 
     public void updateUserData(ArrayList<MolePlayer> winners, ArrayList<MolePlayer> losers, boolean draw) {
-        for (MolePlayer p : winners) refreshUserData(p.user);
-        for (MolePlayer p : losers) refreshUserData(p.user);
-        int ratingDiff = (int) ((calcAvgRating(winners) - calcAvgRating(losers)) * .04);
-        int ratingGain = draw ? ratingDiff : 16 - ratingDiff;
-        if (ratingGain > 32) ratingGain = 32;
-        else if (ratingGain < 0) ratingGain = 0;
-        for (MolePlayer p : winners) {
-            if (!p.ai) updateUserRating(p.user, p.user.getData().rating +
-                    (p.role == MolePlayer.ROLE.MOLE ? -ratingGain : ratingGain), true);
-        }
-        for (MolePlayer p : losers) {
-            if (!p.ai) updateUserRating(p.user, p.user.getData().rating -
-                    (p.role == MolePlayer.ROLE.MOLE ? -ratingGain : ratingGain), false);
-        }
+        for (MolePlayer p : winners) refreshAndGetUserData(p.user);
+        for (MolePlayer p : losers) refreshAndGetUserData(p.user);
+        final int ratingDiff = (int) ((calcAvgRating(winners) - calcAvgRating(losers)) * .04);
+        final int ratingGain = Math.min(Math.max(draw ? ratingDiff : 16 - ratingDiff, 0), 32);
+        final BiConsumer<MolePlayer, Boolean> updateRating = (player, isWinner) -> {
+            player.user.getData().ifPresent(data -> {
+                if (!player.ai) {
+                    updateUserRating(player.user, data.rating + (isWinner ? 1 : -1) *
+                            (player.role == MolePlayer.ROLE.MOLE ? -ratingGain : ratingGain), isWinner);
+                }
+            });
+        };
+        winners.forEach(p -> updateRating.accept(p, true));
+        losers.forEach(p -> updateRating.accept(p, false));
     }
 
     private int calcAvgRating(ArrayList<MolePlayer> team) {
-        int total = 0;
-        for (MolePlayer p : team) {
-            int rating = p.ai ?
-                    (p.role == MolePlayer.ROLE.MOLE ? MoleServ.STOCK_MOLE_STRENGTH : MoleServ.STOCK_STRENGTH) :
-                    p.user.getData().rating;
-            total += rating;
-        }
-        return total / team.size();
+        return team
+                .stream()
+                .map(player -> player.ai ?
+                        (player.role == MolePlayer.ROLE.MOLE ? MoleServ.STOCK_MOLE_STRENGTH : MoleServ.STOCK_STRENGTH) :
+                        (player.user.getData().orElse(player.user.getEmptyData())).rating)
+                .reduce(0, Integer::sum) / team.size();
     }
 
     private void updateUserRating(MoleUser user, int newRating, boolean winner) {
-        MoleBase.MoleQuery query = moleBase.makeQuery(
-                "UPDATE `players` SET Rating='" + newRating + "' WHERE Name='" + user.name + "'");
-        query.runUpdate();
-        user.tell("Rating change: " + user.getData().rating + " -> " + newRating);
-        if (winner) {
-            query.setQueryString("UPDATE `players` SET Wins='" + (user.getData().wins + 1) +
-                    "' WHERE Name='" + user.name + "'");
-        } else {
-            query.setQueryString("UPDATE `players` SET Losses='" + (user.getData().losses + 1) +
-                    "' WHERE Name='" + user.name + "'");
-        }
-        query.runUpdate();
+        moleBase.makeQuery(
+                        "UPDATE `players` SET Rating=? WHERE Name=?")
+                .ifPresent(query -> {
+                    query.runUpdate(statement -> {
+                        statement.setInt(1, newRating);
+                        statement.setString(2, user.name);
+                    });
+                });
+        user.getData().ifPresent(data -> {
+            user.tell("Rating change: " + data.rating + " -> " + newRating);
+            moleBase.makeQuery("UPDATE `players` SET " + (winner ? "Wins" : "Losses") + "=? WHERE Name=?")
+                    .ifPresent(query -> query.runUpdate(statement -> {
+                        statement.setInt(1, winner ? data.wins : data.losses + 1);
+                        statement.setString(2, user.name);
+                    }));
+        });
     }
 
-    private ArrayNode getTopPlayers(int n) {
-        ArrayNode playlist = OBJ_MAPPER.createArrayNode();
-        MoleBase.MoleQuery query = moleBase.makeQuery(
-                "SELECT * FROM players ORDER BY Rating DESC LIMIT " + n);
-        ResultSet rs = query.runQuery();
-        if (rs != null) try {
-            while (rs.next()) {
-                ObjectNode node = OBJ_MAPPER.createObjectNode();
-                node.put("name", rs.getString("Name"));
-                node.put("rating", rs.getInt("Rating"));
-                playlist.add(node);
-            }
-        } catch (SQLException ergh) {
-        }
-        return playlist;
+    private Optional<ArrayNode> getTopPlayers(int n) { // TODO: Split into 2 functions
+        return moleBase.makeQuery("SELECT * FROM players ORDER BY Rating DESC LIMIT ?").flatMap(query ->
+                query.mapResultSet(statement -> {
+                    statement.setInt(1, n);
+                }, rs -> {
+                    ArrayNode playlist = OBJ_MAPPER.createArrayNode();
+                    while (rs.next()) {
+                        ObjectNode node = OBJ_MAPPER.createObjectNode();
+                        node.put("name", rs.getString("Name"));
+                        node.put("rating", rs.getInt("Rating"));
+                        playlist.add(node);
+                    }
+                    return Optional.of(playlist);
+                })
+        );
     }
 
     public JsonNode toJSON() {
@@ -367,7 +373,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                     }
                 }
             } else if (typeTxt.equals("top")) {
-                user.tell("top", getTopPlayers(Integer.parseInt(dataTxt)));
+                getTopPlayers(Integer.parseInt(dataTxt)).ifPresent(it -> {
+                    user.tell("top", it);
+                });
             } else if (typeTxt.equals("chat")) {
                 ObjectNode node = OBJ_MAPPER.createObjectNode();
                 node.put("player", user.name);
@@ -429,7 +437,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                         "Uptime: " + timeString(System.currentTimeMillis() - startTime));
                 break;
             case "finger":
-                user.tell(WebSockServ.MSG_SERV, refreshUserData(user).toString());
+                refreshAndGetUserData(user).ifPresent(it -> {
+                    user.tell(WebSockServ.MSG_SERV, it.toString());
+                });
                 break;
             default:
                 user.tell(WebSockServ.MSG_ERR, "Error: command not found");
@@ -505,8 +515,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         }
         user.tell(WebSockServ.MSG_LOG_SUCCESS, msg);
         updateGameList(user);
-        user.tell("top", getTopPlayers(10));
-        refreshUserData(user);
+        getTopPlayers(10).ifPresent(it -> {
+            user.tell("top", it);
+        });
+        refreshAndGetUserData(user);
     }
 
     @Override

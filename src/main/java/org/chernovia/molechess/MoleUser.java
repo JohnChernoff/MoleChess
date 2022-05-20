@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.chernovia.lib.zugserv.Connection;
 
+import java.util.Optional;
+
 public class MoleUser {
     String oauth;
     String name;
@@ -39,18 +41,23 @@ public class MoleUser {
 
     public MoleUser(Connection c, String o, String n) {
         this.conn = c;
-        if (conn != null) conn.setStatus(Connection.Status.STATUS_OK);
+        if (conn != null) {
+            conn.setStatus(Connection.Status.STATUS_OK);
+        }
         this.oauth = o;
         this.name = n;
     }
 
-    public MoleData setData(int wins, int losses, int rating, String about) {
+    public void setData(int wins, int losses, int rating, String about) {
         data = new MoleData(wins, losses, rating, about);
-        return data;
     }
 
-    public MoleData getData() {
-        return data;
+    public MoleData getEmptyData() {
+        return this.new MoleData(0, 0, 0, "");
+    }
+
+    public Optional<MoleData> getData() {
+        return Optional.ofNullable(data);
     }
 
     public boolean sameConnection(Connection c) {
