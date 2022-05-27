@@ -156,7 +156,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             user.tell("Rating change: " + data.rating + " -> " + newRating);
             moleBase.makeQuery("UPDATE `players` SET " + (winner ? "Wins" : "Losses") + "=? WHERE Name=?")
                     .ifPresent(query -> query.runUpdate(statement -> {
-                        statement.setInt(1, winner ? data.wins : data.losses + 1);
+                        statement.setInt(1, (winner ? data.wins : data.losses) + 1);
                         statement.setString(2, user.name);
                     }));
         });
