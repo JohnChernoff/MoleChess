@@ -9,8 +9,6 @@ import java.awt.*;
 public class MolePlayer implements StockListener {
 
     enum ROLE {MOLE, PLAYER}
-
-    ;
     MoleGame game;
     MoleUser user;
     boolean away = false;
@@ -24,7 +22,7 @@ public class MolePlayer implements StockListener {
     Move move = null;
     MolePlayer vote = null;
     ROLE role = ROLE.PLAYER;
-    Color guiColor = Color.BLUE;
+    Color guiColor;
 
     //TODO: fix color assignment bug when player rejoins
     public MolePlayer(MoleUser usr, MoleGame g, int c, Color c2) {
@@ -66,7 +64,8 @@ public class MolePlayer implements StockListener {
 
     @Override
     public void newStockMove(String move) {
-        game.voteMove(this, move);
+        StringBuilder actualMove = new StringBuilder(move); //if (actualMove.length() > 4) actualMove.insert(4,"="); //promotion
+        game.handleMoveVote(this, actualMove.toString());
     }
 
 }

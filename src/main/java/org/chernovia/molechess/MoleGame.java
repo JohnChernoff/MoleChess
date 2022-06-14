@@ -96,12 +96,8 @@ public class MoleGame implements Runnable {
     public static final int COLOR_UNKNOWN = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
 
     public enum GAME_RESULT {ONGOING, DRAW, CHECKMATE, STALEMATE, ABANDONED}
-
-    ;
-
     public enum GAME_PHASE {PREGAME, VOTING, POSTGAME}
 
-    ;
     private MoleTeam[] teams = new MoleTeam[2];
     ArrayList<MoleUser> observers = new ArrayList<MoleUser>();
     private MoleListener listener;
@@ -125,9 +121,9 @@ public class MoleGame implements Runnable {
     private boolean endOnAccusation = false;
     private boolean defection = true;
     private float currentGUIHue = (float) Math.random();
-    public static final Pattern VALID_MOVE_PATTERN = Pattern.compile("[a-h][1-8][a-h][1-8]");
+    public static final Pattern VALID_MOVE_PATTERN = Pattern.compile("[a-h][1-8][a-h][1-8][qQrRbBnN]?");
 
-    public MoleGame(MoleUser c, String t, MoleListener l) {
+    public MoleGame(MoleUser c, String t, String startFEN, MoleListener l) {
         creator = c;
         title = t;
         playing = false;
@@ -136,7 +132,7 @@ public class MoleGame implements Runnable {
         moveHistory = new ArrayList<MoveVotes>();
         lastActivity = System.currentTimeMillis();
         turn = COLOR_WHITE;
-        board = new Board();
+        board = new Board(); board.loadFromFen(startFEN);
         moveNum = 1;
     }
 
@@ -304,14 +300,14 @@ public class MoleGame implements Runnable {
         }
     }
 
-    public void voteMove(MoleUser user, String movestr) {
+    public void handleMoveVote(MoleUser user, String moveStr) {
         MolePlayer player = getPlayer(user);
         if (player == null) {
             update(user, new MoleResult(false, "Player not found: " + user.name));
-        } else voteMove(player, movestr);
+        } else handleMoveVote(player, moveStr);
     }
 
-    public void voteMove(final MolePlayer player, final String moveStr) {
+    public void handleMoveVote(final MolePlayer player, final String moveStr) { //log("Handling new move: " + moveStr);
         getMove(moveStr).ifPresentOrElse(move -> {
                     if (phase != GAME_PHASE.VOTING) {
                         update(player.user, new MoleResult(false, "Bad phase: " + phase));
@@ -370,7 +366,7 @@ public class MoleGame implements Runnable {
         playing = true;
         setMole(COLOR_BLACK);
         setMole(COLOR_WHITE);
-        listener.started(this); //spamMove(null); //starting position
+        listener.started(this);  //starting position
         while (playing) {
             spam("Turn #" + moveNum + ": " + colorString(turn));
             autoPlay(turn);
@@ -381,7 +377,7 @@ public class MoleGame implements Runnable {
                 ArrayList<Move> moveList = getMoveVotes(turn);
                 if (moveList.size() == 0) {
                     spam("No legal moves selected, picking randomly...");
-                    move = pickMove(board.legalMoves());
+                    move = pickMove(board.legalMoves()); move.setSan(getSan(move,turn));
                 } else {
                     spam("Picking randomly from the following moves: \n" + listMoves(turn));
                     move = pickMove(moveList);
@@ -394,10 +390,7 @@ public class MoleGame implements Runnable {
                         turn = getNextTurn();
                         moveNum++;
                     }
-                } else {
-                    spam("WTF: " + move);
-                    return;
-                } ////shouldn't occur
+                } else { spam("WTF: " + move); return; } ////shouldn't occur
             }
         }
         if (!isDeserted()) newPhase(GAME_PHASE.POSTGAME, postTime);
@@ -440,11 +433,8 @@ public class MoleGame implements Runnable {
     }
 
     private JsonNode historyToJSON() {
-        //ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
         ArrayNode historyNode = MoleServ.OBJ_MAPPER.createArrayNode();
         for (MoveVotes votes : moveHistory) historyNode.add(votes.toJSON());
-        //node.set("history",historyNode);
-        //node.put("title",title); //log("Move History: " + node.toPrettyString());
         return historyNode;
     }
 
@@ -640,9 +630,8 @@ public class MoleGame implements Runnable {
         return "";
     }
 
-    private boolean addMoveVote(final MolePlayer player, final Move move) {
-        final String san = getSan(move, player.color);
-        if (san.equals("")) return false;
+    private boolean addMoveVote(final MolePlayer player, final Move move) { //log("Adding: " + move + " -> " + move.getPromotion());
+        final String san = getSan(move, player.color); if (san.equals("")) return false;
         move.setSan(san);
         player.move = move;
         if (countMoveVotes(player.color) >= activePlayers(turn, true)) gameThread.interrupt();
@@ -687,7 +676,7 @@ public class MoleGame implements Runnable {
         return new MoveVotes(voteList, fen, color);
     }
 
-    private Optional<Move> getMove(final String moveStr) {
+    private Optional<Move> getMove(final String moveStr) { //log("Attempted Move: " + moveStr);
         final Matcher moveStrMatcher = VALID_MOVE_PATTERN.matcher(moveStr);
         if (moveStrMatcher.find()) {
             return Optional.of(new Move(moveStrMatcher.group(), turn == COLOR_BLACK ? Side.BLACK : Side.WHITE));
@@ -702,7 +691,7 @@ public class MoleGame implements Runnable {
         } else return new MoleResult(false, "Invalid Move: " + move); //shouldn't occur
     }
 
-    private void spamMovez(Move move) {
+    private void spamMoves(Move move) {
         ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
         node.put("lm", move == null ? "" : move.toString());
         node.put("fen", board.getFen());

@@ -21,8 +21,8 @@ public class StockThread extends Thread {
     public void run() {
         stockfish.startEngine(path);
         stockfish.setOptions(1, 25, elo);
-        String move = stockfish.getBestMove(fen, moveTime);
-        listener.newStockMove(move); //System.out.println("New Move: " + move);
+        String move = stockfish.getBestMove(fen, moveTime); //System.out.println("New AI Move: " + move);
+        listener.newStockMove(move);
         stockfish.stopEngine();
     }
 }

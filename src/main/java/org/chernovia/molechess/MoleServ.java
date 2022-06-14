@@ -242,7 +242,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 creator.tell(WebSockServ.MSG_ERR,
                         "Failed to create game: too many games (" + maxUserGames + ")");
             } else {
-                MoleGame game = new MoleGame(creator, title, this);
+                //MoleGame game = new MoleGame(creator, title, "rnbqkbn1/pppppppP/8/8/8/8/PPPPPPP1/RNBQKBNR w KQq - 0 1",this);
+                MoleGame game = new MoleGame(creator, title, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",this);
                 game.setMoveTime(defMoveTime);
                 games.put(title, game);
                 updateGames(false);
@@ -308,7 +309,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                     if (game == null) { //unlikely but possible?
                         user.tell(WebSockServ.MSG_ERR, "Game not found: " + title);
                     } else {
-                        game.voteMove(user, move.asText() + (prom.isNull() ? "" : prom.asText()));
+                        game.handleMoveVote(user, move.asText() + (prom.isNull() ? "" : prom.asText()));
                     }
                 } else {
                     user.tell(WebSockServ.MSG_ERR, "WTF: " + dataTxt);
