@@ -54,7 +54,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private ArrayList<MoleUser> users = new ArrayList<>();
     private ConcurrentHashMap<String, MoleGame> games = new ConcurrentHashMap<>();
     private ZugServ serv;
-    private int purgeFreq = 30, maxUserGames = 3, defMoveTime = 12;
+    private int purgeFreq = 30, maxUserGames = 3, defMoveTime = 60;
     private long startTime;
     private boolean running = false;
     private boolean testing = false;
@@ -387,7 +387,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                     node.put("msg", chatMsg);
                     String source = sourceNode.asText("?");
                     node.put("source", source);
-                    if (source.equals("lobby")) spam("chat", node);
+                    if (source.equals("serv")) spam("chat", node);
                     else broadcast(source, node);
                 } else {
                     user.tell(WebSockServ.MSG_ERR, "Bad chat");
@@ -581,7 +581,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         while (running) {
             boolean purged = false;
             try {
-                Thread.sleep(purgeFreq * 1000); //TODO: use ConcurrentHashMap (ornicar)
+                Thread.sleep(purgeFreq * 1000);
                 for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
                     MoleGame game = (MoleGame) entry.getValue();
                     if (game.isDefunct()) {

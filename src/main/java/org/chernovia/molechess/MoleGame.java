@@ -107,7 +107,7 @@ public class MoleGame implements Runnable {
     private long lastActivity;
     private int minPlayers = 3, maxPlayers = 6, kickFlag = 2;
     private int turn;
-    private int moveTime = 12, postTime = 300, preTime = 999;
+    private int moveTime = 60, postTime = 300, preTime = 999;
     private double calcFactor = .25;
     private Board board;
     private Thread gameThread;
