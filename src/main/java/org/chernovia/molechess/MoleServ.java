@@ -22,25 +22,30 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
-//TODO:
-//Double Mole/Inspector/Takebacker Role?
-//~ornicar2: you need to use a ConcurrentHashMap
-//~Defecting Mole rating change bug
-//~handle AWOL team members
-//~handle draws
-//~stockplug M1 blindness
-//~database
-//~molevote bug
-//~game specific chat
-//~limit number of games a user may create
-//~how do I spectate that game?
-//~empty/pregame board timeouts
-//~handle logins with same token
-//~update player leaving
-//~ai voting
-//~50 move rule draws
-//~how do I export to pgn?
-//
+/* TODO:
+obs while playing bug (need unobs)
+~voting info (during and after game)
+~player chat text colors
+~innocent accused remain
+~ornicar2: you need to use a ConcurrentHashMap
+~Defecting Mole rating change bug
+~handle AWOL team members
+~handle draws
+~stockplug M1 blindness
+~database
+~molevote bug
+~game specific chat
+~limit number of games a user may create
+~how do I spectate that game?
+~empty/pregame board timeouts
+~handle logins with same token
+~update player leaving
+~ai voting
+~50 move rule draws
+~how do I export to pgn?
+Double Mole/Inspector/Takebacker Role?
+*/
+
 public class MoleServ extends Thread implements ConnListener, MoleListener {
     static final String VERSION = "0.1";
     static final String MSG_GAME_UPDATE = "game_update";
@@ -378,17 +383,23 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                     user.tell("top", it);
                 });
             } else if (typeTxt.equals("chat")) {
-                ObjectNode node = OBJ_MAPPER.createObjectNode();
-                node.put("player", user.name);
-                JsonNode chatNode = dataNode.get("msg");
                 JsonNode sourceNode = dataNode.get("source");
-                if (msgNode != null && sourceNode != null) {
-                    String chatMsg = chatNode.asText("?");
-                    node.put("msg", chatMsg);
+                if (sourceNode != null && dataNode != null) {
                     String source = sourceNode.asText("?");
-                    node.put("source", source);
-                    if (source.equals("serv")) spam("chat", node);
-                    else broadcast(source, node);
+                    if (source.equals("serv")) {
+                            ObjectNode node = OBJ_MAPPER.createObjectNode();
+                            node.put("user", user.name);
+                            node.put("source", source);
+                            node.put("msg", dataNode.get("msg").asText("?"));
+                            spam("chat", node); //TODO: add player serv color
+                    }
+                    else {
+                        MoleGame g = games.get(source);
+                        if (g  != null) {
+                            MolePlayer p = g.getPlayer(user);
+                            if (p != null) g.spam("chat",dataNode.get("msg").asText("?"),p);
+                        }
+                    }
                 } else {
                     user.tell(WebSockServ.MSG_ERR, "Bad chat");
                 }
@@ -409,11 +420,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         }
     }
 
-    private void broadcast(String title, JsonNode node) {
-        for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
-            MoleGame game = (MoleGame) entry.getValue();
-            if (game.getTitle().equals(title)) game.spam("chat", node);
-        }
+
+
+    private void broadcast(MoleGame game, JsonNode node) {
+        if (game != null) game.spamNode("chat", node);
     }
 
     private void handleCmd(MoleUser user, JsonNode cmdNode) {
@@ -526,17 +536,18 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     public void updateUser(MoleUser user, MoleGame game, MoleResult action, boolean moves) {
         if (user != null) {
             if (action.success) {
-                user.tell(action.message);
+                user.tell(action.message,game);
                 user.tell(MSG_GAME_UPDATE, game.toJSON(moves));
-            } else user.tell(WebSockServ.MSG_ERR, action.message);
+            } else user.tell(WebSockServ.MSG_ERR, action.message,game);
         }
     }
 
     @Override
     public void updateGame(MoleGame game, MoleResult action, boolean moves) {
         if (action.success) {
-            game.spam(action.message);
-            game.spam(MSG_GAME_UPDATE, game.toJSON(moves));
+            if (action.player != null) game.spam(action.message,action.player);
+            else game.spam(action.message);
+            game.spamNode(MSG_GAME_UPDATE, game.toJSON(moves));
         } else {
             game.spam(WebSockServ.MSG_ERR, action.message);
         }
@@ -544,7 +555,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 
     @Override
     public void started(MoleGame game) {
-        game.spam(MSG_GAME_UPDATE, game.toJSON(true));
+        game.spamNode(MSG_GAME_UPDATE, game.toJSON(true));
         updateGames(false);
     }
 
@@ -584,7 +595,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 Thread.sleep(purgeFreq * 1000);
                 for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
                     MoleGame game = (MoleGame) entry.getValue();
-                    if (game.isDefunct()) {
+                    if (game.isDefunct(9999999)) {
                         games.remove(entry.getKey());
                         purged = true;
                     }

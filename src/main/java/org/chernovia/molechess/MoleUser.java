@@ -79,14 +79,14 @@ public class MoleUser {
         else return (status.equals(Connection.Status.STATUS_OK));
     }
 
-    public void tell(String msg) {
-        tell("serv_msg", msg);
-    }
-
-    public void tell(String type, String msg) {
+    public void tell(String msg) { tell("serv_msg",msg,null); }
+    public void tell(String msg, MoleGame game) { tell("serv_msg",msg,game); }
+    public void tell(String type, String msg) { tell(type,msg,null); }
+    public void tell(String type, String msg, MoleGame game) {
         ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
         node.put("msg", msg);
-        tell(type, (JsonNode) node);
+        node.put("source",game == null ? "serv" : game.getTitle());
+        tell(type,node);
     }
 
     public void tell(String type, JsonNode node) {

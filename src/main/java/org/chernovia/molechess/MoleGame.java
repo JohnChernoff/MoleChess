@@ -164,18 +164,11 @@ public class MoleGame implements Runnable {
         return (!playing && ((System.currentTimeMillis() - timeout) > lastActivity));
     }
 
-    private void update(MoleUser user, MoleResult action) {
-        update(user, action, false);
-    }
-
-    private void update(MoleResult action) {
-        update(null, action, false);
-    }
-
+    private void update(MoleUser user, MoleResult action) { update(user, action, false); }
+    private void update(MoleResult action) { update(null, action, false); }
     private void update(MoleResult action, boolean moves) {
         update(null, action, moves);
     }
-
     private void update(MoleUser user, MoleResult action, boolean moves) {
         if (user == null) listener.updateGame(this, action, moves);
         else listener.updateUser(user, this, action, moves);
@@ -316,7 +309,7 @@ public class MoleGame implements Runnable {
                     } else if (player.votedOff) {
                         update(player.user, new MoleResult(false, "Sorry, you've been voted off"));
                     } else if (addMoveVote(player, move)) {
-                        update(new MoleResult(player.user.name + " votes: " + move.getSan()));
+                        update(new MoleResult(player.user.name + " votes: " + move.getSan(),player));
                     } else {
                         update(player.user, new MoleResult(false, "Bad Move: " + moveStr));
                     }
@@ -379,7 +372,10 @@ public class MoleGame implements Runnable {
                     spam("No legal moves selected, picking randomly...");
                     move = pickMove(board.legalMoves()); move.setSan(getSan(move,turn));
                 } else {
-                    spam("Picking randomly from the following moves: \n" + listMoves(turn));
+                    spam("Picking randomly from the following moves:"); // \n" + listMoves(turn));
+                    for (MolePlayer p : teams[turn].players) {
+                        spam(p.user.name + " -> " + ((p.move == null) ? "-" : p.move.getSan()),p);
+                    }
                     move = pickMove(moveList);
                 }
                 if (makeMove(move).success) {
@@ -405,24 +401,24 @@ public class MoleGame implements Runnable {
 
     private void handleMoleVote(MolePlayer player, MolePlayer p) {
         player.vote = p;
-        spam(player.user.name + " votes off: " + p.user.name);
+        update(new MoleResult(player.user.name + " votes off: " + p.user.name,player));
         MolePlayer suspect = checkVote(player.color);
         if (suspect != null) {
-            spam(suspect.user.name + " is voted off!");
+            spam(suspect.user.name + " is voted off!",suspect);
             if (suspect.role == MolePlayer.ROLE.MOLE) {
-                spam(suspect.user.name + " was " + "the Mole!"); //award(player.color, moleBonus);
+                spam(suspect.user.name + " was " + "the Mole!",suspect); //award(player.color, moleBonus);
+                if (defection) {
+                    int newColor = getNextTurn(suspect.color);
+                    teams[suspect.color].players.remove(suspect);
+                    suspect.color = newColor;
+                    suspect.role = MolePlayer.ROLE.PLAYER;
+                    teams[suspect.color].players.add(suspect);
+                    update(new MoleResult(suspect.user.name + " defects to " + colorString(newColor) + "!"));
+                } else suspect.votedOff = true;
             } else {
                 MolePlayer mole = getMole(player.color);
-                spam(mole.user.name + " was " + "the Mole!"); //award(mole, moleBonus);
+                spam(mole.user.name + " was " + "the Mole!",mole); //award(mole, moleBonus);
             }
-            if (defection) {
-                int newColor = getNextTurn(suspect.color);
-                teams[suspect.color].players.remove(suspect);
-                suspect.color = newColor;
-                suspect.role = MolePlayer.ROLE.PLAYER;
-                teams[suspect.color].players.add(suspect);
-                update(new MoleResult(suspect.user.name + " defects to " + colorString(newColor) + "!"));
-            } else suspect.votedOff = true;
             teams[player.color].voteCount++;
             if (endOnAccusation) {
                 endGame(COLOR_UNKNOWN, "Mole vote");
@@ -438,7 +434,7 @@ public class MoleGame implements Runnable {
         return historyNode;
     }
 
-    private MolePlayer getPlayer(MoleUser user) {
+    public MolePlayer getPlayer(MoleUser user) {
         for (int color = 0; color <= 1; color++) {
             for (MolePlayer player : teams[color].players) {
                 if (player.user.equals(user)) return player;
@@ -472,7 +468,7 @@ public class MoleGame implements Runnable {
             node.put("seconds", seconds); //node.put("max_seconds",moveTime);
             node.put("turn", turn);
             node.put("title", title);
-            spam("countdown", node);
+            spamNode("countdown", node);
             try {
                 Thread.sleep((seconds * 1000));
             } catch (InterruptedException e) {
@@ -533,8 +529,8 @@ public class MoleGame implements Runnable {
             player = teams[color].players.get(p);
         } while (onlyHuman(player)); //humans cannot be a mole with all-AI teammates
         player.role = MolePlayer.ROLE.MOLE;
-        player.user.tell("You're the mole!");
-        player.user.tell("mole", "");
+        player.user.tell("You're the mole!",this);
+        player.user.tell("mole","", this);
     }
 
     private int activePlayers(int color, boolean ignoreAI) {
@@ -695,7 +691,7 @@ public class MoleGame implements Runnable {
         ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
         node.put("lm", move == null ? "" : move.toString());
         node.put("fen", board.getFen());
-        spam("game_update", node);
+        spamNode("game_update", node);
     }
 
     private MolePlayer checkVote(int color) { //log("Checking vote...");
@@ -729,27 +725,25 @@ public class MoleGame implements Runnable {
     private void award(int color, int bonus) {
         for (MolePlayer p : teams[color].players) award(p, bonus);
     }
-
     private void award(MolePlayer player, int bonus) {
         if (player.isActive()) {
             player.score += bonus;
-            spam(player.user.name + " gets " + bonus + " points");
+            spam(player.user.name + " gets " + bonus + " points",player);
         }
     }
 
-    public void spam(String msg) {
-        spam("chat", msg);
-    }
-
-    public void spam(String type, String msg) {
+    public void spam(String msg) { spam("game_msg", msg, null); }
+    public void spam(String type, String msg) { spam(type,msg,null); }
+    public void spam(String msg, MolePlayer p) { spam("game_msg", msg, p); }
+    public void spam(String type, String msg, MolePlayer p) {
         ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
         node.put("msg", msg);
         node.put("source", title);
-        node.put("player", "");
-        spam(type, node);
+        node.set("player",(p == null) ? null : p.toJSON());
+        spamNode(type, node);
     }
 
-    public void spam(String type, JsonNode node) {
+    public void spamNode(String type, JsonNode node) {
         try {
             for (int c = 0; c <= 1; c++) {
                 for (MolePlayer player : teams[c].players) {

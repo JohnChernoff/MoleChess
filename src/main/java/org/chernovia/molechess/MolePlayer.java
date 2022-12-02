@@ -49,6 +49,7 @@ public class MolePlayer implements StockListener {
         obj.put("play_col", rgbToHex(guiColor.getRed(), guiColor.getGreen(), guiColor.getBlue()));
         obj.put("away", away);
         obj.put("kickable", skipped >= game.getKickFlag());
+        obj.put("votename",vote == null ? "undecided" : vote.user.name);
         obj.set("user", user.toJSON(true));
         return obj;
     }
