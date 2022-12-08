@@ -239,7 +239,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         return count;
     }
 
-    private void newGame(MoleUser creator, String title) {
+    private void newGame(MoleUser creator, String title, int color) {
         if (validString(title)) {
             if (games.containsKey(title)) {
                 creator.tell(WebSockServ.MSG_ERR, "Failed to create game: title already exists");
@@ -251,6 +251,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 MoleGame game = new MoleGame(creator, title, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",this);
                 game.setMoveTime(defMoveTime);
                 games.put(title, game);
+                game.addPlayer(creator, color); //TODO: bounds check color?
                 updateGames(false);
             }
         } else {
@@ -273,7 +274,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             } else if (user == null) {
                 conn.tell(WebSockServ.MSG_ERR, "Please log in");
             } else if (typeTxt.equals("newgame")) {
-                if (validString(dataTxt)) newGame(user, dataTxt);
+                JsonNode color = dataNode.get("color");
+                JsonNode title = dataNode.get("title");
+                if (color != null && title != null) newGame(user,title.asText(),color.asInt());
                 else user.tell(WebSockServ.MSG_ERR, "Ruhoh: Invalid Data!");
             } else if (typeTxt.equals("obsgame")) {
                 MoleGame game = games.get(dataTxt);
@@ -299,7 +302,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                     game.dropPlayer(user);
                 }
             } else if (typeTxt.equals("startgame")) {
-                MoleGame game = this.games.get(dataTxt);
+                MoleGame game = games.get(dataTxt);
                 if (game == null) {
                     user.tell(WebSockServ.MSG_ERR, "You're not in a game");
                 } else {
@@ -406,6 +409,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             } else if (typeTxt.equals("update")) {
                 MoleGame game = games.get(dataTxt);
                 if (game != null) user.tell(MSG_GAME_UPDATE, game.toJSON(true));
+            } else if (typeTxt.equals("status")) {
+                MoleGame game = games.get(dataTxt);
+                if (game != null) user.tell("status",game.getStatus());
+                else user.tell("status","null");
             } else if (typeTxt.equals("cmd")) {
                 handleCmd(user, dataNode);
             } else {

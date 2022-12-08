@@ -92,12 +92,25 @@ public class MoleGame implements Runnable {
     }
 
     public static List<String> MOLE_NAMES = MoleServ.loadRandomNames("molenames.txt");
-    //public static final String MSG_TYPE_MOVELIST = "movelist";
     public static final int COLOR_UNKNOWN = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
-
     public enum GAME_RESULT {ONGOING, DRAW, CHECKMATE, STALEMATE, ABANDONED}
     public enum GAME_PHASE {PREGAME, VOTING, POSTGAME}
-
+    private Color[] COLORS = {
+            new Color(255,92,92),
+            new Color(128,36,222),
+            new Color(255,255,0),
+            new Color(92,128,28),
+            new Color(255,55,200),
+            new Color(255,255,128),
+            new Color(172,172,172),
+            new Color(255,255,255),
+            new Color(255,0,0),
+            new Color(255,0,255),
+            new Color(255,200,0),
+            new Color(128,128,128)
+    };
+    List<Color> colorList;
+    private int colorPointer = 0;
     private MoleTeam[] teams = new MoleTeam[2];
     ArrayList<MoleUser> observers = new ArrayList<MoleUser>();
     private MoleListener listener;
@@ -121,6 +134,7 @@ public class MoleGame implements Runnable {
     private boolean endOnAccusation = false;
     private boolean defection = true;
     private float currentGUIHue = (float) Math.random();
+    private boolean PASTELS = false;
     public static final Pattern VALID_MOVE_PATTERN = Pattern.compile("[a-h][1-8][a-h][1-8][qQrRbBnN]?");
 
     public MoleGame(MoleUser c, String t, String startFEN, MoleListener l) {
@@ -134,6 +148,17 @@ public class MoleGame implements Runnable {
         turn = COLOR_WHITE;
         board = new Board(); board.loadFromFen(startFEN);
         moveNum = 1;
+        colorList = Arrays.asList(COLORS);
+        Collections.shuffle(colorList);
+    }
+
+    public String getStatus() {
+        switch (phase) {
+            case PREGAME: return isReady().message;
+            case VOTING: return "voting";
+            case POSTGAME: return "postgame";
+            default: return "wtf";
+        }
     }
 
     public MoleUser getCreator() {
@@ -272,23 +297,33 @@ public class MoleGame implements Runnable {
         }
     }
 
+    public MoleResult isReady() {
+        if (teams[COLOR_BLACK].players.size() != teams[COLOR_WHITE].players.size()) {
+            return new MoleResult(aiFilling,"unbalanced");
+        } else if (teams[COLOR_BLACK].players.size() < minPlayers) {
+            return new MoleResult(aiFilling, "insufficient");
+        } else {
+            return new MoleResult(true, "ready");
+        }
+    }
+
     public void startGame(MoleUser user) {
         if (phase != GAME_PHASE.PREGAME) {
             update(user, new MoleResult(false, "Game already begun"));
         } else if (!creator.equals(user)) {
             update(user, new MoleResult(false, "Error: permission denied"));
         } else {
-            if (!aiFilling && teams[COLOR_BLACK].players.size() != teams[COLOR_WHITE].players.size()) {
-                update(user, new MoleResult(false, "Error: unbalanced teams"));
-            } else if (!aiFilling && teams[COLOR_BLACK].players.size() < minPlayers) {
-                update(user, new MoleResult(false, "Error: too few players"));
-            } else {
+            MoleResult ready = isReady();
+            if (ready.success) {
                 if (aiFilling) {
                     aiFill(COLOR_BLACK);
                     aiFill(COLOR_WHITE);
                 }
                 gameThread = new Thread(this);
                 gameThread.start();
+            }
+            else {
+                update(user, new MoleResult(false, "Error: " + ready.message + " players"));
             }
         }
     }
@@ -757,10 +792,18 @@ public class MoleGame implements Runnable {
     }
 
     private Color nextGUIColor() {
-        currentGUIHue += .3;
-        if (currentGUIHue > 1) currentGUIHue--; //log("Current Hue: " + currentGUIHue);
-        return Color.getHSBColor(currentGUIHue,
-                (2.5f + ((float) Math.random() * 7.5f)) / 10, (5 + ((float) Math.random() * 5)) / 10);
+        if (PASTELS) {
+            currentGUIHue += .3;
+            if (currentGUIHue > 1) currentGUIHue--; //log("Current Hue: " + currentGUIHue);
+            return Color.getHSBColor(currentGUIHue,
+                    (2.5f + ((float) Math.random() * 7.5f)) / 10, (5 + ((float) Math.random() * 5)) / 10);
+        }
+        else {
+            if (colorPointer < colorList.size()) return colorList.get(colorPointer++);
+            else {
+                colorPointer = 0; return colorList.get(colorPointer);
+            }
+        }
     }
 
     private static void log(String msg) {
