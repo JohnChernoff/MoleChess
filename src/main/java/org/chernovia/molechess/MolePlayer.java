@@ -3,8 +3,10 @@ package org.chernovia.molechess;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.bhlangonijr.chesslib.move.Move;
+import kotlin.Pair;
 
 import java.awt.*;
+import java.util.List;
 
 public class MolePlayer implements StockListener {
 
@@ -12,9 +14,11 @@ public class MolePlayer implements StockListener {
     MoleGame game;
     MoleUser user;
     boolean away = false;
+    boolean kicked = false;
     boolean votedOff = false;
     boolean ai = false;
     boolean resigning = false;
+    boolean suspecting = false;
     int rating;
     int score;
     int color;
@@ -23,6 +27,7 @@ public class MolePlayer implements StockListener {
     MolePlayer vote = null;
     ROLE role = ROLE.PLAYER;
     Color guiColor;
+    List<Pair<MolePlayer, Float>> evals;
 
     //TODO: fix color assignment bug when player rejoins
     public MolePlayer(MoleUser usr, MoleGame g, int c, Color c2) {
@@ -35,7 +40,7 @@ public class MolePlayer implements StockListener {
     }
 
     public boolean isActive() {
-        return (!away && !votedOff);
+        return (!away && !kicked);
     }
 
     public boolean isInteractive() {
@@ -69,4 +74,18 @@ public class MolePlayer implements StockListener {
         game.handleMoveVote(this, actualMove.toString());
     }
 
+    @Override
+    public void updateEvaluations(final float currentEval, List<Pair<MolePlayer, Float>> evaluations) {
+        this.evals = evaluations;
+        evaluations.stream()
+                .filter(it -> (color == MoleGame.COLOR_WHITE)? it.component2() < currentEval : it.component2() > currentEval)
+                .map(eval -> new Pair<>(eval.component1(), Math.abs(currentEval - eval.component2())))
+                .max((o1, o2) -> (int) (o1.component2() - o2.component2()))
+                .ifPresent(it -> {
+                    if (it.component2() > 1) {
+                        game.castMoleVote(this.user, it.component1().user.name);
+                    }
+                });
+        suspecting = false;
+    }
 }

@@ -105,26 +105,18 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 });
     }
 
-    private Optional<MoleUser.MoleData> refreshAndGetUserData(MoleUser user) {
-        if (user.getConn() == null) return Optional.empty();
-        return moleBase.makeQuery(
-                        "SELECT * FROM `players` WHERE Name=?")
-                .flatMap(it -> it.mapResultSet(statement -> {
-                            statement.setString(1, user.name);
-                        }, rs -> {
-                            if (rs.next()) {
-                                user.setData(
-                                        rs.getInt("Wins"), rs.getInt("Losses"),
-                                        rs.getInt("Rating"), rs.getString("About"));
-                            }
-                            return user.getData();
-                        })
-                );
+    private MoleUser getRefreshedUser(MoleUser user) {
+        if (user.conn == null) return user;
+        return moleBase.makeQuery("SELECT * FROM `players` WHERE Name=?")
+                .flatMap(it -> it.mapResultSet(statement -> statement.setString(1, user.name), rs ->
+                        Optional.of((rs.next()) ? user.withData(rs.getInt("Wins"), rs.getInt("Losses"),
+                        rs.getInt("Rating"), rs.getString("About")) : user)
+                )).orElse(user);
     }
 
     public void updateUserData(ArrayList<MolePlayer> winners, ArrayList<MolePlayer> losers, boolean draw) {
-        for (MolePlayer p : winners) refreshAndGetUserData(p.user);
-        for (MolePlayer p : losers) refreshAndGetUserData(p.user);
+        for (MolePlayer p : winners) p.user = getRefreshedUser(p.user);
+        for (MolePlayer p : losers) p.user = getRefreshedUser(p.user);
         final int ratingDiff = (int) ((calcAvgRating(winners) - calcAvgRating(losers)) * .04);
         final int ratingGain = Math.min(Math.max(draw ? ratingDiff : 16 - ratingDiff, 0), 32);
         final BiConsumer<MolePlayer, Boolean> updateRating = (player, isWinner) -> {
@@ -455,9 +447,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                         "Uptime: " + timeString(System.currentTimeMillis() - startTime));
                 break;
             case "finger":
-                refreshAndGetUserData(user).ifPresent(it -> {
-                    user.tell(WebSockServ.MSG_SERV, it.toString());
-                });
+                MoleUser u = getRefreshedUser(user);
+                u.tell(WebSockServ.MSG_SERV, user.toString());
                 break;
             default:
                 user.tell(WebSockServ.MSG_ERR, "Error: command not found");
@@ -490,10 +481,12 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         MoleUser user = getUserByToken(token);
         if (user != null) {
             user.tell("Multiple login detected, closing");
-            user.getConn().close();
-            user.setConn(conn);
-            conn.setStatus(Connection.Status.STATUS_OK); //users.remove(mu); users.add(newUser);
-            return user;
+            if (user.conn != null) {
+                user.conn.close();
+            }
+            users.remove(user);
+            users.add(user.withConnection(conn));
+            return user.withConnection(conn);
         } else return null;
     }
 
@@ -536,14 +529,14 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         getTopPlayers(10).ifPresent(it -> {
             user.tell("top", it);
         });
-        refreshAndGetUserData(user);
+        getRefreshedUser(user);
     }
 
     @Override
     public void updateUser(MoleUser user, MoleGame game, MoleResult action, boolean moves) {
         if (user != null) {
             if (action.success) {
-                user.tell(action.message,game);
+                user.tell(action.message, game);
                 user.tell(MSG_GAME_UPDATE, game.toJSON(moves));
             } else user.tell(WebSockServ.MSG_ERR, action.message,game);
         }
