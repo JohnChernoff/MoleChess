@@ -10,7 +10,7 @@ public class MoleUser {
     String oauth;
     String name;
     private Connection conn;
-    private MoleData data;
+    public MoleData data;
 
     public class MoleData {
         String about;

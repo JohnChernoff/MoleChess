@@ -56,8 +56,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     static final int MAX_STR_LEN = 30;
     static String STOCK_PATH = "stockfish/stockfish";
     static int STOCK_STRENGTH = 2000, STOCK_MOLE_STRENGTH = 1500;
-    private ArrayList<MoleUser> users = new ArrayList<>();
-    private ConcurrentHashMap<String, MoleGame> games = new ConcurrentHashMap<>();
+    private final ArrayList<MoleUser> users = new ArrayList<>();
+    private final ConcurrentHashMap<String, MoleGame> games = new ConcurrentHashMap<>();
     private ZugServ serv;
     private int purgeFreq = 30, maxUserGames = 3, defMoveTime = 60;
     private long startTime;
