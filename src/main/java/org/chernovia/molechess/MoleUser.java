@@ -3,12 +3,13 @@ package org.chernovia.molechess;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.chernovia.lib.zugserv.Connection;
-
+import org.chernovia.lib.zugserv.ZugServ;
 import java.util.Optional;
 
 public class MoleUser {
     String oauth;
     String name;
+    int blitzRating;
     private Connection conn;
     public MoleData data;
 
@@ -39,13 +40,14 @@ public class MoleUser {
         }
     }
 
-    public MoleUser(Connection c, String o, String n) {
+    public MoleUser(Connection c, String o, String n, int r) {
         this.conn = c;
         if (conn != null) {
             conn.setStatus(Connection.Status.STATUS_OK);
         }
         this.oauth = o;
         this.name = n;
+        blitzRating = r;
     }
 
     public void setData(int wins, int losses, int rating, String about) {
@@ -79,8 +81,8 @@ public class MoleUser {
         else return (status.equals(Connection.Status.STATUS_OK));
     }
 
-    public void tell(String msg) { tell("serv_msg",msg,null); }
-    public void tell(String msg, MoleGame game) { tell("serv_msg",msg,game); }
+    public void tell(String msg) { tell(ZugServ.MSG_SERV,msg,null); }
+    public void tell(String msg, MoleGame game) { tell(ZugServ.MSG_SERV,msg,game); }
     public void tell(String type, String msg) { tell(type,msg,null); }
     public void tell(String type, String msg, MoleGame game) {
         ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
@@ -97,8 +99,9 @@ public class MoleUser {
     public JsonNode toJSON(boolean ratingOnly) {
         ObjectNode obj = MoleServ.OBJ_MAPPER.createObjectNode();
         obj.put("name", this.name);
+        obj.put("blitz", this.blitzRating);
         if (data != null) obj.set("data", data.toJSON(ratingOnly));
-        return (JsonNode) obj;
+        return obj;
     }
 
     public boolean equals(Object o) {

@@ -50,8 +50,8 @@ public class MoleGame implements Runnable {
         public MoveVotes(ArrayList<MoveVote> votes, String fenString, int c) {
             fen = fenString;
             color = c;
-            alts = new ArrayList<MoveVote>();
-            selected = new ArrayList<MoveVote>();
+            alts = new ArrayList<>();
+            selected = new ArrayList<>();
             for (MoveVote mv : votes) {
                 if (mv.selected) selected.add(mv);
                 else alts.add(mv);
@@ -74,11 +74,11 @@ public class MoleGame implements Runnable {
 
     class MoleTeam {
         ArrayList<MolePlayer> players;
-        int voteCount; //int color;
+        int voteCount;
 
-        public MoleTeam(int c) {
-            players = new ArrayList<MolePlayer>();
-            voteCount = 0; //color = c;
+        public MoleTeam() {
+            players = new ArrayList<>();
+            voteCount = 0;
         }
 
         public JsonNode toJSON() {
@@ -95,22 +95,21 @@ public class MoleGame implements Runnable {
         ArrayList<MolePlayer> white_players = new ArrayList<>();
         BucketList(boolean populate) {
             if (populate) {
-                for (MolePlayer p : teams[COLOR_BLACK].players) black_players.add(p);
-                for (MolePlayer p : teams[COLOR_WHITE].players) white_players.add(p);
+                black_players.addAll(teams[COLOR_BLACK].players);
+                white_players.addAll(teams[COLOR_WHITE].players);
             }
         }
         BucketList(BucketList list) {
-            for (MolePlayer p :list.black_players) black_players.add(p);
-            for (MolePlayer p :list.white_players) white_players.add(p);
+            black_players.addAll(list.black_players);
+            white_players.addAll(list.white_players);
         }
         private float getTeamAvg(ArrayList<MolePlayer> players) {
             float sum = 0;
             for (MolePlayer player: players) {
-                sum += player.user.data.rating; //TODO: use lichess rating
+                sum += player.user.blitzRating;
 
             }
-            final float avg =  sum / players.size(); //System.out.println("Average: " + avg);
-            return avg;
+            return sum / players.size();
         }
         float diff() {
             return Math.abs(getTeamAvg(black_players) - getTeamAvg(white_players));
@@ -120,42 +119,29 @@ public class MoleGame implements Runnable {
         }
         public String toString() {
             StringBuilder s = new StringBuilder("List: \n");
-            s.append("Black: \n"); for (MolePlayer p : black_players) s.append(p.user.name + "(" + p.user.data.rating + ") "); s.append("\n");
-            s.append("White: \n"); for (MolePlayer p : white_players) s.append(p.user.name + "(" + p.user.data.rating + ") "); s.append("\n");
-            s.append("Average Diff: " + diff());
+            s.append("Black: \n"); for (MolePlayer p : black_players) s.append(p.user.name).append("(").append(p.user.blitzRating).append(") "); s.append("\n");
+            s.append("White: \n"); for (MolePlayer p : white_players) s.append(p.user.name).append("(").append(p.user.blitzRating).append(") "); s.append("\n");
+            s.append("Average Diff: ").append(diff());
             return s.toString();
         }
     }
 
     public static List<String> MOLE_NAMES = MoleServ.loadRandomNames("molenames.txt");
     public static final int COLOR_UNKNOWN = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
-    public enum GAME_RESULT {ONGOING, DRAW, CHECKMATE, STALEMATE, ABANDONED}
+    //public enum GAME_RESULT {ONGOING, DRAW, CHECKMATE, STALEMATE, ABANDONED}
     public enum GAME_PHASE {PREGAME, VOTING, POSTGAME}
-    private Color[] COLORS = {
-            new Color(255,92,92),
-            new Color(128,36,222),
-            new Color(255,255,0),
-            new Color(92,128,28),
-            new Color(255,55,200),
-            new Color(255,255,128),
-            new Color(172,172,172),
-            new Color(255,255,255),
-            new Color(255,0,0),
-            new Color(255,0,255),
-            new Color(255,200,0),
-            new Color(128,128,128)
-    };
+
     List<Color> colorList;
     private int colorPointer = 0;
     private final String READY = "ready", UNBALANCED = "unbalanced", INSUFFICIENT = "insufficient";
-    private final ArrayList<MolePlayer> playerBucket = new ArrayList<MolePlayer>();
-    private boolean BUCKETS = true;
+    private final ArrayList<MolePlayer> playerBucket = new ArrayList<>();
+    private final boolean BUCKETS = true;
     private final MoleTeam[] teams = new MoleTeam[2];
-    ArrayList<MoleUser> observers = new ArrayList<MoleUser>();
-    private MoleListener listener;
+    ArrayList<MoleUser> observers = new ArrayList<>();
+    private final MoleListener listener;
+    private final MoleUser creator;
+    private final String title;
     private boolean playing;
-    private MoleUser creator;
-    private String title;
     private long lastActivity;
     private int minPlayers = 3, maxPlayers = 6, kickFlag = 2;
     private int turn;
@@ -181,23 +167,42 @@ public class MoleGame implements Runnable {
         title = t;
         playing = false;
         listener = l;
-        for (int color = COLOR_BLACK; color <= COLOR_WHITE; color++) teams[color] = new MoleTeam(color);
-        moveHistory = new ArrayList<MoveVotes>();
+        teams[COLOR_BLACK] = new MoleTeam(); teams[COLOR_WHITE] = new MoleTeam();
+        moveHistory = new ArrayList<>();
         lastActivity = System.currentTimeMillis();
         turn = COLOR_WHITE;
         board = new Board(); board.loadFromFen(startFEN);
         moveNum = 1;
+        Color[] COLORS = {
+                new Color(255, 92, 92),
+                new Color(128, 36, 222),
+                new Color(255, 255, 0),
+                new Color(92, 128, 28),
+                new Color(255, 55, 200),
+                new Color(255, 255, 128),
+                new Color(172, 172, 172),
+                new Color(255, 255, 255),
+                new Color(255, 0, 0),
+                new Color(255, 0, 255),
+                new Color(255, 200, 0),
+                new Color(128, 128, 128)
+        };
         colorList = Arrays.asList(COLORS);
         Collections.shuffle(colorList);
     }
 
+    public ArrayList<MoleTeam> getTeams() {
+        ArrayList<MoleTeam> teamList = new ArrayList<>();
+        teamList.add(teams[COLOR_BLACK]); teamList.add(teams[COLOR_WHITE]);
+        return teamList;
+    }
+
     public String getStatus() {
-        switch (phase) {
-            case PREGAME: return isReady().message;
-            case VOTING: return "voting";
-            case POSTGAME: return "postgame";
-            default: return "wtf";
-        }
+        return switch (phase) {
+            case PREGAME -> isReady().message;
+            case VOTING -> "voting";
+            case POSTGAME -> "postgame";
+        };
     }
 
     public MoleUser getCreator() {
@@ -248,7 +253,7 @@ public class MoleGame implements Runnable {
             obj.set("bucket",buckArray);
         }
         ArrayNode teamArray = MoleServ.OBJ_MAPPER.createArrayNode();
-        for (int c = COLOR_BLACK; c <= COLOR_WHITE; c++) teamArray.add(teams[c].toJSON());
+        for (MoleTeam team : getTeams()) teamArray.add(team.toJSON());
         obj.set("teams", teamArray);
         obj.put("title", title);
         obj.put("creator", creator.name);
@@ -265,7 +270,7 @@ public class MoleGame implements Runnable {
     }
 
     public void removeObserver(MoleUser user) {
-        if (observers.remove(user)) ;
+        observers.remove(user);
         update(user, new MoleResult("No longer observing: " + title));
     }
 
@@ -284,8 +289,14 @@ public class MoleGame implements Runnable {
                 (!BUCKETS && teams[color].players.size() >= maxPlayers - 1)) {
             update(user, new MoleResult(false, "Too many players"));
         } else {
-            MolePlayer newPlayer = new MolePlayer(user, this, color, nextGUIColor());
-            if (BUCKETS) playerBucket.add(newPlayer); else teams[color].players.add(newPlayer);
+            if (BUCKETS) {
+                MolePlayer newPlayer = new MolePlayer(user, this, COLOR_UNKNOWN, nextGUIColor());
+                playerBucket.add(newPlayer);
+            }
+            else {
+                MolePlayer newPlayer = new MolePlayer(user, this, color, nextGUIColor());
+                teams[color].players.add(newPlayer);
+            }
             update(user, new MoleResult("Joined game: " + title), true);
             update(new MoleResult(user.name + " joins the game"));
             lastActivity = System.currentTimeMillis();
@@ -301,21 +312,17 @@ public class MoleGame implements Runnable {
         MolePlayer player = getPlayer(user);
         if (player != null) {
             if (phase == GAME_PHASE.PREGAME) {
-                teams[player.color].players.remove(player);
+                if (BUCKETS) playerBucket.remove(player); else teams[player.color].players.remove(player);
             } else {
                 player.away = true;
             }
+            update(player.user,new MoleResult("Leaving: " + title));
             update(new MoleResult(user.name + " leaves"));
             if (isDeserted()) {
                 switch (phase) {
-                    case PREGAME:
-                        listener.finished(this);
-                        break;
-                    case VOTING:
-                        endGame(COLOR_UNKNOWN, "deserted");
-                        break;
-                    case POSTGAME:
-                        gameThread.interrupt();
+                    case PREGAME -> listener.finished(this);
+                    case VOTING -> endGame(COLOR_UNKNOWN, "deserted");
+                    case POSTGAME -> gameThread.interrupt();
                 }
             }
         } else if (!observed) update(user, new MoleResult(false, "Player not found"));
@@ -375,7 +382,7 @@ public class MoleGame implements Runnable {
             if (ready.success) {
                 if (BUCKETS) {
                     if (playerBucket.size() > 1) {
-                        BucketList bucketList = bucketSort(); log("Sorted: " + bucketList.toString());
+                        BucketList bucketList = bucketSort(); log("Sorted: " + bucketList.toString()); //System.exit(-1);
                         for (MolePlayer p : bucketList.black_players) {
                             teams[COLOR_BLACK].players.add(p); p.color = COLOR_BLACK;
                         }
@@ -572,7 +579,8 @@ public class MoleGame implements Runnable {
                 } else suspect.votedOff = true;
             } else {
                 MolePlayer mole = getMole(player.color);
-                spam(mole.user.name + " was " + "the Mole!",mole); //award(mole, moleBonus);
+                if (mole != null) spam(mole.user.name + " was " + "the Mole!",mole); //award(mole, moleBonus);
+                else spam("WTF: no mole!");
             }
             teams[player.color].voteCount++;
             if (endOnAccusation) {
@@ -590,26 +598,29 @@ public class MoleGame implements Runnable {
     }
 
     public MolePlayer getPlayer(MoleUser user) {
-        for (int color = 0; color <= 1; color++) {
-            for (MolePlayer player : teams[color].players) {
-                if (player.user.equals(user)) return player;
-            }
+        for (MolePlayer player : getAllPlayers()) {
+            if (player.user.equals(user)) return player;
         }
         return null;
     }
 
     private MolePlayer getPlayer(String name, int color) {
-        for (MolePlayer player : teams[color].players) {
-            if (player.user.name.equalsIgnoreCase(name)) return player;
+        for (MolePlayer player : getAllPlayers()) {
+            if (player.user.name.equalsIgnoreCase(name) &&
+                    (color == COLOR_UNKNOWN || player.color == color)) return player;
         }
         return null;
     }
 
     private boolean isDeserted() {
-        for (int color = 0; color <= 1; color++) {
-            for (MolePlayer player : teams[color].players) {
-                if (!player.away && !player.ai) return false;
+        if (phase == GAME_PHASE.PREGAME) {
+            for (MolePlayer player : playerBucket) {
+                if (creator.equals(player.user)) return false;
             }
+            return true;
+        }
+        for (MolePlayer player : getAllPlayers()) {
+            if (!player.away && !player.ai) return false;
         }
         return true;
     }
@@ -625,7 +636,7 @@ public class MoleGame implements Runnable {
             node.put("title", title);
             spamNode("countdown", node);
             try {
-                Thread.sleep((seconds * 1000));
+                Thread.sleep((seconds * 1000L));
             } catch (InterruptedException e) {
                 timeout = false;
             }
@@ -663,7 +674,7 @@ public class MoleGame implements Runnable {
         while (teams[color].players.size() < minPlayers) {
             int n = (int) Math.floor(Math.random() * MOLE_NAMES.size());
             MolePlayer player = new MolePlayer(
-                    new MoleUser(null, null, MOLE_NAMES.get(n)), this, color, nextGUIColor());
+                    new MoleUser(null, null, MOLE_NAMES.get(n),1600), this, color, nextGUIColor());
             player.ai = true;
             teams[color].players.add(player);
         }
@@ -800,13 +811,13 @@ public class MoleGame implements Runnable {
     }
 
     private ArrayList<Move> getMoveVotes(int color) {
-        ArrayList<Move> moveList = new ArrayList<Move>();
+        ArrayList<Move> moveList = new ArrayList<>();
         for (MolePlayer player : teams[color].players) if (player.move != null) moveList.add(player.move);
         return moveList;
     }
 
     private MoveVotes getMoveVotes(int color, String fen, Move selectedMove) {
-        ArrayList<MoveVote> voteList = new ArrayList<MoveVote>();
+        ArrayList<MoveVote> voteList = new ArrayList<>();
         boolean selected = false;
         for (MolePlayer player : teams[color].players) {
             if (player.move != null) {
@@ -850,7 +861,7 @@ public class MoleGame implements Runnable {
     }
 
     private MolePlayer checkVote(int color) { //log("Checking vote...");
-        HashMap<MolePlayer, Integer> voteMap = new HashMap<MolePlayer, Integer>();
+        HashMap<MolePlayer, Integer> voteMap = new HashMap<>();
         for (MolePlayer p : teams[color].players) {
             if (p.vote != null) {
                 if (voteMap.containsKey(p.vote)) voteMap.put(p.vote, voteMap.get(p.vote) + 1);
@@ -861,7 +872,7 @@ public class MoleGame implements Runnable {
         for (MolePlayer p : teams[color].players) {
             if (voteMap.containsKey(p)) {
                 Integer votes = voteMap.get(p);    //log("Votes for " + p.user.name + ": " + votes.intValue());
-                if (votes.intValue() >= quorum) return p;
+                if (votes >= quorum) return p;
             }
         }
         return null;
@@ -887,6 +898,14 @@ public class MoleGame implements Runnable {
         }
     }
 
+    private ArrayList<MolePlayer> getAllPlayers() {
+        if (BUCKETS && phase == GAME_PHASE.PREGAME) return playerBucket;
+        ArrayList<MolePlayer> list = new ArrayList<>();
+        list.addAll(teams[COLOR_BLACK].players);
+        list.addAll(teams[COLOR_WHITE].players);
+        return list;
+    }
+
     public void spam(String msg) { spam("game_msg", msg, null); }
     public void spam(String type, String msg) { spam(type,msg,null); }
     public void spam(String msg, MolePlayer p) { spam("game_msg", msg, p); }
@@ -900,11 +919,7 @@ public class MoleGame implements Runnable {
 
     public void spamNode(String type, JsonNode node) {
         try {
-            for (int c = 0; c <= 1; c++) {
-                for (MolePlayer player : teams[c].players) {
-                    if (!player.away) player.user.tell(type, node);
-                }
-            }
+            for (MolePlayer player : getAllPlayers()) if (!player.away) player.user.tell(type,node);
         } catch (ConcurrentModificationException oops) { //dunno how exactly this happens...
             log(oops.getMessage());
         }

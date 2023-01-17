@@ -80,7 +80,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         testing = parser.getFlag("testing");
         log("Testing: " + testing);
         log("Constructing MoleServ on port: " + port);
-        serv = (ZugServ) new WebSockServ(port, this);
+        serv = new WebSockServ(port, this);
         serv.startSrv();
         startTime = System.currentTimeMillis();
         final String[] dbuser = parser.getArgumentValue("dbuser");
@@ -98,20 +98,14 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         moleBase.makeQuery(
                         "INSERT INTO `players` (`Name`, `Wins`, `Losses`, `Rating`, `DateCreated`, `About`) " +
                                 "VALUES (?, '0', '0', '1600', CURRENT_TIMESTAMP, '')")
-                .ifPresent(query -> {
-                    query.runUpdate(statement -> {
-                        statement.setString(1, user.name);
-                    });
-                });
+                .ifPresent(query -> query.runUpdate(statement -> statement.setString(1, user.name)));
     }
 
     private Optional<MoleUser.MoleData> refreshAndGetUserData(MoleUser user) {
         if (user.getConn() == null) return Optional.empty();
         return moleBase.makeQuery(
                         "SELECT * FROM `players` WHERE Name=?")
-                .flatMap(it -> it.mapResultSet(statement -> {
-                            statement.setString(1, user.name);
-                        }, rs -> {
+                .flatMap(it -> it.mapResultSet(statement -> statement.setString(1, user.name), rs -> {
                             if (rs.next()) {
                                 user.setData(
                                         rs.getInt("Wins"), rs.getInt("Losses"),
@@ -127,14 +121,12 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         for (MolePlayer p : losers) refreshAndGetUserData(p.user);
         final int ratingDiff = (int) ((calcAvgRating(winners) - calcAvgRating(losers)) * .04);
         final int ratingGain = Math.min(Math.max(draw ? ratingDiff : 16 - ratingDiff, 0), 32);
-        final BiConsumer<MolePlayer, Boolean> updateRating = (player, isWinner) -> {
-            player.user.getData().ifPresent(data -> {
-                if (!player.ai) {
-                    updateUserRating(player.user, data.rating + (isWinner ? 1 : -1) *
-                            (player.role == MolePlayer.ROLE.MOLE ? -ratingGain : ratingGain), isWinner);
-                }
-            });
-        };
+        final BiConsumer<MolePlayer, Boolean> updateRating =
+                (player, isWinner) -> player.user.getData().ifPresent(data -> { if (!player.ai) {
+                updateUserRating(player.user, data.rating + (isWinner ? 1 : -1) *
+                        (player.role == MolePlayer.ROLE.MOLE ? -ratingGain : ratingGain), isWinner);
+            }
+        });
         winners.forEach(p -> updateRating.accept(p, true));
         losers.forEach(p -> updateRating.accept(p, false));
     }
@@ -151,12 +143,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private void updateUserRating(MoleUser user, int newRating, boolean winner) {
         moleBase.makeQuery(
                         "UPDATE `players` SET Rating=? WHERE Name=?")
-                .ifPresent(query -> {
-                    query.runUpdate(statement -> {
-                        statement.setInt(1, newRating);
-                        statement.setString(2, user.name);
-                    });
-                });
+                .ifPresent(query -> query.runUpdate(statement -> {
+                    statement.setInt(1, newRating);
+                    statement.setString(2, user.name);
+                }));
         user.getData().ifPresent(data -> {
             user.tell("Rating change: " + data.rating + " -> " + newRating);
             moleBase.makeQuery("UPDATE `players` SET " + (winner ? "Wins" : "Losses") + "=? WHERE Name=?")
@@ -169,9 +159,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 
     private Optional<ArrayNode> getTopPlayers(int n) { // TODO: Split into 2 functions
         return moleBase.makeQuery("SELECT * FROM players ORDER BY Rating DESC LIMIT ?").flatMap(query ->
-                query.mapResultSet(statement -> {
-                    statement.setInt(1, n);
-                }, rs -> {
+                query.mapResultSet(statement -> statement.setInt(1, n), rs -> {
                     ArrayNode playlist = OBJ_MAPPER.createArrayNode();
                     while (rs.next()) {
                         ObjectNode node = OBJ_MAPPER.createObjectNode();
@@ -209,7 +197,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         try {
             ArrayNode gameObj = OBJ_MAPPER.createArrayNode();
             for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
-                MoleGame game = (MoleGame) entry.getValue();
+                MoleGame game = entry.getValue();
                 if (shallowCopy) {
                     ObjectNode node = OBJ_MAPPER.createObjectNode();
                     node.put("title", game.getTitle());
@@ -234,7 +222,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private int countGames(MoleUser creator) {
         int count = 0;
         for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
-            if (((MoleGame) entry.getValue()).getCreator().equals(creator)) count++;
+            if (entry.getValue().getCreator().equals(creator)) count++;
         }
         return count;
     }
@@ -242,10 +230,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private void newGame(MoleUser creator, String title, int color) {
         if (validString(title)) {
             if (games.containsKey(title)) {
-                creator.tell(WebSockServ.MSG_ERR, "Failed to create game: title already exists");
+                creator.tell(ZugServ.MSG_ERR, "Failed to create game: title already exists");
             } else if (countGames(creator) > maxUserGames) {
-                creator.tell(WebSockServ.MSG_ERR,
-                        "Failed to create game: too many games (" + maxUserGames + ")");
+                creator.tell(ZugServ.MSG_ERR,"Failed to create game: too many games (" + maxUserGames + ")");
             } else {
                 //MoleGame game = new MoleGame(creator, title, "rnbqkbn1/pppppppP/8/8/8/8/PPPPPPP1/RNBQKBNR w KQq - 0 1",this);
                 MoleGame game = new MoleGame(creator, title, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",this);
@@ -255,7 +242,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 updateGames(false);
             }
         } else {
-            creator.tell(WebSockServ.MSG_ERR, "Failed to create game: bad title");
+            creator.tell(ZugServ.MSG_ERR, "Failed to create game: bad title");
         }
     }
 
@@ -265,23 +252,23 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             JsonNode msgNode = OBJ_MAPPER.readTree(msg);
             JsonNode typeNode = msgNode.get("type"), dataNode = msgNode.get("data");
             if (typeNode == null || dataNode == null) {
-                conn.tell(WebSockServ.MSG_ERR, "Error: Bad Data(null)");
+                conn.tell(ZugServ.MSG_ERR, "Error: Bad Data(null)");
                 return;
             }
             String typeTxt = typeNode.asText(), dataTxt = dataNode.asText();
             if (typeTxt.equals("login")) {
                 handleLogin(conn, dataTxt, testing);
             } else if (user == null) {
-                conn.tell(WebSockServ.MSG_ERR, "Please log in");
+                conn.tell(ZugServ.MSG_ERR, "Please log in");
             } else if (typeTxt.equals("newgame")) {
                 JsonNode color = dataNode.get("color");
                 JsonNode title = dataNode.get("title");
                 if (color != null && title != null) newGame(user,title.asText(),color.asInt());
-                else user.tell(WebSockServ.MSG_ERR, "Ruhoh: Invalid Data!");
+                else user.tell(ZugServ.MSG_ERR, "Ruhoh: Invalid Data!");
             } else if (typeTxt.equals("obsgame")) {
                 MoleGame game = games.get(dataTxt);
                 if (game == null) {
-                    user.tell(WebSockServ.MSG_ERR, "Game does not exist");
+                    user.tell(ZugServ.MSG_ERR, "Game does not exist");
                 } else {
                     game.addObserver(user);
                 }
@@ -290,21 +277,21 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 int color = dataNode.get("color").asInt();
                 MoleGame game = games.get(title);
                 if (game == null) {
-                    user.tell(WebSockServ.MSG_ERR, "Game does not exist");
+                    user.tell(ZugServ.MSG_ERR, "Game does not exist");
                 } else {
                     game.addPlayer(user, color);
                 }
             } else if (typeTxt.equals("partgame")) {
                 MoleGame game = games.get(dataTxt);
                 if (game == null) {
-                    user.tell(WebSockServ.MSG_ERR, "Game not joined: " + dataTxt);
+                    user.tell(ZugServ.MSG_ERR, "Game not joined: " + dataTxt);
                 } else {
                     game.dropPlayer(user);
                 }
             } else if (typeTxt.equals("startgame")) {
                 MoleGame game = games.get(dataTxt);
                 if (game == null) {
-                    user.tell(WebSockServ.MSG_ERR, "You're not in a game");
+                    user.tell(ZugServ.MSG_ERR, "You're not in a game");
                 } else {
                     game.startGame(user);
                 }
@@ -315,12 +302,12 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 if (title != null && move != null) {
                     MoleGame game = games.get(title.asText());
                     if (game == null) { //unlikely but possible?
-                        user.tell(WebSockServ.MSG_ERR, "Game not found: " + title);
+                        user.tell(ZugServ.MSG_ERR, "Game not found: " + title);
                     } else {
                         game.handleMoveVote(user, move.asText() + (prom.isNull() ? "" : prom.asText()));
                     }
                 } else {
-                    user.tell(WebSockServ.MSG_ERR, "WTF: " + dataTxt);
+                    user.tell(ZugServ.MSG_ERR, "WTF: " + dataTxt);
                 }
             } else if (typeTxt.equals("voteoff")) {
                 JsonNode title = dataNode.get("board");
@@ -328,12 +315,12 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 if (title != null && suspect != null) {
                     MoleGame game = games.get(title.asText());
                     if (game == null) {
-                        user.tell(WebSockServ.MSG_ERR, "Game not found: " + title);
+                        user.tell(ZugServ.MSG_ERR, "Game not found: " + title);
                     } else {
                         game.castMoleVote(user, suspect.asText());
                     }
                 } else {
-                    user.tell(WebSockServ.MSG_ERR, "WTF: " + dataTxt);
+                    user.tell(ZugServ.MSG_ERR, "WTF: " + dataTxt);
                 }
             } else if (typeTxt.equals("kickoff")) {
                 JsonNode title = dataNode.get("board");
@@ -341,17 +328,17 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 if (title != null && suspect != null) {
                     MoleGame game = games.get(title.asText());
                     if (game == null) {
-                        user.tell(WebSockServ.MSG_ERR, "Game not found: " + title);
+                        user.tell(ZugServ.MSG_ERR, "Game not found: " + title);
                     } else {
                         game.kickPlayer(user, suspect.asText());
                     }
                 } else {
-                    user.tell(WebSockServ.MSG_ERR, "WTF: " + dataTxt);
+                    user.tell(ZugServ.MSG_ERR, "WTF: " + dataTxt);
                 }
             } else if (typeTxt.equals("resign")) {
                 MoleGame game = games.get(dataTxt);
                 if (game == null) {
-                    user.tell(WebSockServ.MSG_ERR, "Game not found: " + dataTxt);
+                    user.tell(ZugServ.MSG_ERR, "Game not found: " + dataTxt);
                 } else {
                     game.resign(user);
                 }
@@ -359,14 +346,14 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 JsonNode gameNode = dataNode.get("game");
                 JsonNode timeNode = dataNode.get("time");
                 if (gameNode == null) {
-                    user.tell(WebSockServ.MSG_ERR, "Game not specified");
+                    user.tell(ZugServ.MSG_ERR, "Game not specified");
                 } else if (timeNode == null) {
-                    user.tell(WebSockServ.MSG_ERR, "Time not specified");
+                    user.tell(ZugServ.MSG_ERR, "Time not specified");
                 } else {
                     String gameTitle = gameNode.asText();
                     MoleGame game = games.get(gameTitle);
                     if (game == null) {
-                        user.tell(WebSockServ.MSG_ERR, "Game not found: " + gameTitle);
+                        user.tell(ZugServ.MSG_ERR, "Game not found: " + gameTitle);
                     } else {
                         if (game.getCreator().equals(user)) {
                             int time = timeNode.asInt();
@@ -374,20 +361,18 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                                 game.setMoveTime(time);
                                 game.spam("New Time Control: " + time + " seconds per move");
                             } else {
-                                user.tell(WebSockServ.MSG_ERR, "Invalid Time: " + time);
+                                user.tell(ZugServ.MSG_ERR, "Invalid Time: " + time);
                             }
                         } else {
-                            user.tell(WebSockServ.MSG_ERR, "Only the creator of this game can set the time");
+                            user.tell(ZugServ.MSG_ERR, "Only the creator of this game can set the time");
                         }
                     }
                 }
             } else if (typeTxt.equals("top")) {
-                getTopPlayers(Integer.parseInt(dataTxt)).ifPresent(it -> {
-                    user.tell("top", it);
-                });
+                getTopPlayers(Integer.parseInt(dataTxt)).ifPresent(it -> user.tell("top", it));
             } else if (typeTxt.equals("chat")) {
                 JsonNode sourceNode = dataNode.get("source");
-                if (sourceNode != null && dataNode != null) {
+                if (sourceNode != null) { // && dataNode != null
                     String source = sourceNode.asText("?");
                     if (source.equals("serv")) {
                             ObjectNode node = OBJ_MAPPER.createObjectNode();
@@ -404,7 +389,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                         }
                     }
                 } else {
-                    user.tell(WebSockServ.MSG_ERR, "Bad chat");
+                    user.tell(ZugServ.MSG_ERR, "Bad chat");
                 }
             } else if (typeTxt.equals("update")) {
                 MoleGame game = games.get(dataTxt);
@@ -416,7 +401,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             } else if (typeTxt.equals("cmd")) {
                 handleCmd(user, dataNode);
             } else {
-                user.tell(WebSockServ.MSG_ERR, "Unknown command");
+                user.tell(ZugServ.MSG_ERR, "Unknown command");
             }
         } catch (JsonMappingException e) {
             log("JSON Mapping goof: " + e.getMessage());
@@ -436,31 +421,15 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private void handleCmd(MoleUser user, JsonNode cmdNode) {
         JsonNode cmd = cmdNode.get("cmd");
         if (cmd.isNull()) {
-            user.tell(WebSockServ.MSG_ERR, "Error: null command");
+            user.tell(ZugServ.MSG_ERR, "Error: null command");
         } else switch (cmdNode.get("cmd").asText()) {
-            case "ver":
-            case "version":
-                user.tell(WebSockServ.MSG_SERV, "Version: " + VERSION);
-                break;
-            case "info":
-                user.tell("info", this.toJSON());
-                break;
-            case "players":
-            case "who":
-                user.tell("users", this.toJSON());
-                break;
-            case "up":
-            case "uptime":
-                user.tell(WebSockServ.MSG_SERV,
-                        "Uptime: " + timeString(System.currentTimeMillis() - startTime));
-                break;
-            case "finger":
-                refreshAndGetUserData(user).ifPresent(it -> {
-                    user.tell(WebSockServ.MSG_SERV, it.toString());
-                });
-                break;
-            default:
-                user.tell(WebSockServ.MSG_ERR, "Error: command not found");
+            case "ver", "version" -> user.tell(ZugServ.MSG_SERV, "Version: " + VERSION);
+            case "info" -> user.tell("info", this.toJSON());
+            case "players", "who" -> user.tell("users", this.toJSON());
+            case "up", "uptime" -> user.tell(ZugServ.MSG_SERV,
+                    "Uptime: " + timeString(System.currentTimeMillis() - startTime));
+            case "finger" -> refreshAndGetUserData(user).ifPresent(it -> user.tell(ZugServ.MSG_SERV, it.toString()));
+            default -> user.tell(ZugServ.MSG_ERR, "Error: command not found");
         }
     }
 
@@ -475,6 +444,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private void spam(String type, String msg, MoleUser exclude) {
         ObjectNode node = OBJ_MAPPER.createObjectNode();
         node.put("msg", msg);
+        node.put("source","serv");
         spam(type, node, exclude);
     }
 
@@ -505,18 +475,19 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         } else if (testing) {
             String name = token;
             if (validString(name)) {
-                addUser(new MoleUser(conn, token, name), "Test Login Successful: Welcome!");
-            } else conn.tell(WebSockServ.MSG_ERR, "Ruhoh: Invalid Data!");
+                addUser(new MoleUser(conn, token, name, 1600), "Test Login Successful: Welcome!");
+            } else conn.tell(ZugServ.MSG_ERR, "Ruhoh: Invalid Data!");
         } else if (token == null) {
-            conn.tell(WebSockServ.MSG_ERR, "Login Error: Missing Oauth Token");
+            conn.tell(ZugServ.MSG_ERR, "Login Error: Missing Oauth Token");
         } else {
             JsonNode accountData = LichessSDK.apiRequest("account", token);
-            if (accountData == null) conn.tell(WebSockServ.MSG_ERR, "Login Error: Bad Oauth Token");
+            if (accountData == null) conn.tell(ZugServ.MSG_ERR, "Login Error: Bad Oauth Token");
             else {
                 JsonNode username = accountData.get("username");
                 if (username != null) {
-                    addUser(new MoleUser(conn, token, username.asText()), "Login Successful: Welcome!");
-                } else conn.tell(WebSockServ.MSG_ERR, "Login Error: weird Lichess API result");
+                    int rating = accountData.get("perfs").get("blitz").get("rating").asInt();
+                    addUser(new MoleUser(conn, token, username.asText(),rating), "Login Successful: Welcome!");
+                } else conn.tell(ZugServ.MSG_ERR, "Login Error: weird Lichess API result");
             }
         }
     }
@@ -529,13 +500,11 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         if (add) {
             users.add(user);
             addUserData(user);
-            spam("serv_msg", "Welcome, " + user.name + "!", user);
+            spam(ZugServ.MSG_SERV, "Welcome, " + user.name + "!", user);
         }
-        user.tell(WebSockServ.MSG_LOG_SUCCESS, msg);
+        user.tell(ZugServ.MSG_LOG_SUCCESS, msg);
         updateGameList(user);
-        getTopPlayers(10).ifPresent(it -> {
-            user.tell("top", it);
-        });
+        getTopPlayers(10).ifPresent(it -> user.tell("top", it));
         refreshAndGetUserData(user);
     }
 
@@ -545,7 +514,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             if (action.success) {
                 user.tell(action.message,game);
                 user.tell(MSG_GAME_UPDATE, game.toJSON(moves));
-            } else user.tell(WebSockServ.MSG_ERR, action.message,game);
+            } else user.tell(ZugServ.MSG_ERR, action.message,game);
         }
     }
 
@@ -556,7 +525,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             else game.spam(action.message);
             game.spamNode(MSG_GAME_UPDATE, game.toJSON(moves));
         } else {
-            game.spam(WebSockServ.MSG_ERR, action.message);
+            game.spam(ZugServ.MSG_ERR, action.message);
         }
     }
 
@@ -582,7 +551,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         MoleUser user = getUser(conn);
         if (user != null) {
             for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
-                MoleGame game = (MoleGame) entry.getValue();
+                MoleGame game = entry.getValue();
                 game.dropPlayer(user);
             }
         }
@@ -599,9 +568,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         while (running) {
             boolean purged = false;
             try {
-                Thread.sleep(purgeFreq * 1000);
+                Thread.sleep(purgeFreq * 1000L);
                 for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
-                    MoleGame game = (MoleGame) entry.getValue();
+                    MoleGame game = entry.getValue();
                     if (game.isDefunct(9999999)) {
                         games.remove(entry.getKey());
                         purged = true;
