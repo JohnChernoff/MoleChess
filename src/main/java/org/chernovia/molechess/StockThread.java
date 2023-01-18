@@ -8,6 +8,7 @@ public class StockThread extends Thread {
     String path;
     String fen;
     int moveTime, elo;
+    static boolean OK = true;
 
     public StockThread(StockListener l, String path, String fen, int moveTime, int elo) {
         stockfish = new StockPlug();
@@ -19,10 +20,14 @@ public class StockThread extends Thread {
     }
 
     public void run() {
-        stockfish.startEngine(path);
-        stockfish.setOptions(1, 25, elo);
-        String move = stockfish.getBestMove(fen, moveTime); //System.out.println("New AI Move: " + move);
-        listener.newStockMove(move);
-        stockfish.stopEngine();
+        if (OK) {
+            if (stockfish.startEngine(path)) {
+                stockfish.setOptions(1, 25, elo);
+                String move = stockfish.getBestMove(fen, moveTime); //System.out.println("New AI Move: " + move);
+                listener.newStockMove(move);
+                stockfish.stopEngine();
+            }
+            else OK = false;
+        }
     }
 }

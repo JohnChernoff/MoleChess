@@ -245,7 +245,7 @@ public class MoleGame implements Runnable {
         }
     }
 
-    public JsonNode toJSON(boolean history) {
+    public ObjectNode toJSON(boolean history) {
         ObjectNode obj = MoleServ.OBJ_MAPPER.createObjectNode();
         ArrayNode buckArray = MoleServ.OBJ_MAPPER.createArrayNode();
         if (BUCKETS) {
@@ -471,12 +471,28 @@ public class MoleGame implements Runnable {
                     } else if (player.votedOff) {
                         update(player.user, new MoleResult(false, "Sorry, you've been voted off"));
                     } else if (addMoveVote(player, move)) {
-                        update(new MoleResult(player.user.name + " votes: " + move.getSan(),player));
+                        updateMoveVotes();
                     } else {
                         update(player.user, new MoleResult(false, "Bad Move: " + moveStr));
                     }
                 }, () -> update(player.user, new MoleResult(false, "Bad Move: " + moveStr))
         );
+    }
+
+    private void updateMoveVotes() {
+        String movePfx = moveNum + (turn == COLOR_BLACK ? "..." : ". ");
+        ArrayNode listNode = MoleServ.OBJ_MAPPER.createArrayNode();
+        for (MolePlayer p : teams[turn].players) {
+            ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+            node.put("player_name",p.user.name);
+            node.put("player_color",p.guiColor.getRGB());
+            node.put("player_move",movePfx + (p.move != null ? p.move.getSan() : "?"));
+            listNode.add(node);
+        }
+        ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+        node.put("move",moveNum);
+        node.put("list",listNode);
+        spamNode("votelist",node);
     }
 
     //TODO: fix weird name voting bug
@@ -522,10 +538,11 @@ public class MoleGame implements Runnable {
         setMole(COLOR_BLACK);
         setMole(COLOR_WHITE);
         listener.started(this);  //starting position
+        newPhase(GAME_PHASE.VOTING);
         while (playing) {
             spam("Turn #" + moveNum + ": " + colorString(turn));
-            autoPlay(turn);
-            //boolean timeout =
+            updateMoveVotes();
+            autoPlay(turn); //boolean timeout =
             newPhase(GAME_PHASE.VOTING, moveTime);
             if (playing) {
                 Move move;
@@ -534,10 +551,10 @@ public class MoleGame implements Runnable {
                     spam("No legal moves selected, picking randomly...");
                     move = pickMove(board.legalMoves()); move.setSan(getSan(move,turn));
                 } else {
-                    spam("Picking randomly from the following moves:"); // \n" + listMoves(turn));
-                    for (MolePlayer p : teams[turn].players) {
-                        spam(p.user.name + " -> " + ((p.move == null) ? "-" : p.move.getSan()),p);
-                    }
+                    //spam("Picking randomly from the following moves:"); // \n" + listMoves(turn));
+                    //for (MolePlayer p : teams[turn].players) {
+                    //    spam(p.user.name + " -> " + ((p.move == null) ? "-" : p.move.getSan()),p);
+                    //}
                     move = pickMove(moveList);
                 }
                 if (makeMove(move).success) {
@@ -625,6 +642,7 @@ public class MoleGame implements Runnable {
         return true;
     }
 
+    private boolean newPhase(GAME_PHASE p) { return newPhase(p,0); }
     private boolean newPhase(GAME_PHASE p, int seconds) {
         phase = p;
         spam("phase", phase.toString());
@@ -860,7 +878,7 @@ public class MoleGame implements Runnable {
         ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
         node.put("lm", move == null ? "" : move.toString());
         node.put("fen", board.getFen());
-        spamNode("game_update", node);
+        spamNode(MoleServ.MSG_GAME_UPDATE, node);
     }
 
     private MolePlayer checkVote(int color) { //log("Checking vote...");
@@ -915,12 +933,12 @@ public class MoleGame implements Runnable {
     public void spam(String type, String msg, MolePlayer p) {
         ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
         node.put("msg", msg);
-        node.put("source", title);
         node.set("player",(p == null) ? null : p.toJSON());
         spamNode(type, node);
     }
 
-    public void spamNode(String type, JsonNode node) {
+    public void spamNode(String type, ObjectNode node) {
+        node.put("source", title);
         try {
             for (MolePlayer player : getAllPlayers()) if (!player.away) player.user.tell(type,node);
         } catch (ConcurrentModificationException oops) { //dunno how exactly this happens...

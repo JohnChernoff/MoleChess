@@ -1,5 +1,7 @@
 package org.chernovia.lib.chess;
 
+import org.chernovia.molechess.MoleServ;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -25,16 +27,13 @@ public class StockPlug {
     public boolean startEngine(String path) {
         try {
             engineProcess = Runtime.getRuntime().exec(path);
-            processReader = new BufferedReader(new InputStreamReader(
-                    engineProcess.getInputStream()));
-            processWriter = new OutputStreamWriter(
-                    engineProcess.getOutputStream());
-        } catch (Exception e) {
-            e.printStackTrace();
+            processReader = new BufferedReader(new InputStreamReader(engineProcess.getInputStream()));
+            processWriter = new OutputStreamWriter(engineProcess.getOutputStream());
+        } catch (IOException e) {
+            MoleServ.log("Stockfish IOError"); //e.printStackTrace();
             return false;
         }
-        //System.out.println("New Process: " + engineProcess.pid());
-        id = engineProcess.pid() + "";
+        id = engineProcess.pid() + "";  //System.out.println("New Process: " + id);
         return true;
     }
 
@@ -47,9 +46,8 @@ public class StockPlug {
      *
      * @param command
      */
-    public void sendCommand(String command) {
-        //System.out.println(id + " -> CMD: " + command);
-        try {
+    public void sendCommand(String command) { //System.out.println(id + " -> CMD: " + command);
+        if (processWriter != null) try {
             processWriter.write(command + "\n");
             processWriter.flush();
         } catch (IOException e) {
@@ -72,13 +70,11 @@ public class StockPlug {
 
     public String getOutput(String keyString, int waitTime) {
         StringBuffer buffer = new StringBuffer();
-        try {
-            //System.out.println("Sleeping: " + waitTime);
+        try { //System.out.println("Sleeping: " + waitTime);
             Thread.sleep(waitTime);
             sendCommand("isready");
             while (true) {
-                String text = processReader.readLine();
-                //System.out.println(id + ": " + text);
+                String text = processReader.readLine(); //System.out.println(id + ": " + text);
                 buffer.append(text + "\n");
                 if (text.startsWith(keyString)) break;
 

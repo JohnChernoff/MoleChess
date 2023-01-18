@@ -414,7 +414,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 
 
 
-    private void broadcast(MoleGame game, JsonNode node) {
+    private void broadcast(MoleGame game, ObjectNode node) {
         if (game != null) game.spamNode("chat", node);
     }
 
