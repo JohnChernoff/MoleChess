@@ -188,6 +188,11 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         return null;
     }
 
+    private MoleUser getUserByName(String name) {
+        for (MoleUser user : users) if (user.name.equalsIgnoreCase(name)) return user;
+        return null;
+    }
+
     private MoleUser getUser(Connection conn) {
         for (MoleUser user : users) if (user.sameConnection(conn)) return user;
         return null;
@@ -456,20 +461,23 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         user.tell(MSG_GAMES_UPDATE, getAllGames(false));
     }
 
-    private MoleUser handleRelogging(Connection conn, String token) {
-        MoleUser user = getUserByToken(token);
-        if (user != null) {
-            user.tell("Multiple login detected, closing");
-            user.getConn().close();
-            user.setConn(conn);
-            conn.setStatus(Connection.Status.STATUS_OK); //users.remove(mu); users.add(newUser);
-            return user;
-        } else return null;
+    private MoleUser handleRelogging(Connection conn, LichessAccountData data) {
+        if (data.ok) {
+            MoleUser user = getUserByName(data.name);
+            if (user != null) {
+                user.tell("Multiple login detected, closing");
+                user.getConn().close();
+                user.setConn(conn);  user.oauth = data.oauth;
+                conn.setStatus(Connection.Status.STATUS_OK);
+                return user;
+            }
+        }
+        return null;
     }
 
-    //private void handleLogin(Connection conn, String token) { handleLogin(conn,token,false); }
     private void handleLogin(Connection conn, String token, boolean testing) {
-        MoleUser relogger = handleRelogging(conn, token);
+        LichessAccountData accountData = new LichessAccountData(token);
+        MoleUser relogger = handleRelogging(conn, accountData);
         if (relogger != null) {
             addUser(relogger, "Relog Successful: Welcome back!", false);
         } else if (testing) {
@@ -480,14 +488,38 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         } else if (token == null) {
             conn.tell(ZugServ.MSG_ERR, "Login Error: Missing Oauth Token");
         } else {
-            JsonNode accountData = LichessSDK.apiRequest("account", token);
-            if (accountData == null) conn.tell(ZugServ.MSG_ERR, "Login Error: Bad Oauth Token");
+            if (accountData.ok) {
+                addUser(new MoleUser(conn,token,accountData.name,accountData.rating),"Login Successful: Welcome!");
+            }
             else {
+                conn.tell(ZugServ.MSG_ERR, "Login Error: weird Lichess API result");
+            }
+        }
+    }
+
+    static class LichessAccountData {
+        String oauth;
+        String name = "";
+        int rating = 0;
+        boolean ok = false;
+        public LichessAccountData(String token) {
+            oauth = token;
+            JsonNode accountData = LichessSDK.apiRequest("account", oauth);
+            if (accountData != null) {
                 JsonNode username = accountData.get("username");
                 if (username != null) {
-                    int rating = accountData.get("perfs").get("blitz").get("rating").asInt();
-                    addUser(new MoleUser(conn, token, username.asText(),rating), "Login Successful: Welcome!");
-                } else conn.tell(ZugServ.MSG_ERR, "Login Error: weird Lichess API result");
+                    name = username.asText();
+                    JsonNode perfs = accountData.get("perfs");
+                    if (perfs != null) {
+                        JsonNode blitz = perfs.get("blitz");
+                        if (blitz != null) {
+                            JsonNode blitzRating = blitz.get("rating");
+                            if (blitzRating.isInt()) {
+                                rating = blitzRating.asInt(); ok = true;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -498,6 +530,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 
     private void addUser(MoleUser user, String msg, boolean add) {
         if (add) {
+            if (getUserByName(user.name) != null) {
+                user.tell(ZugServ.MSG_ERR,"You're already logged in (probably from another browser)");
+                user.getConn().close(); return;
+            }
             users.add(user);
             addUserData(user);
             spam(ZugServ.MSG_SERV, "Welcome, " + user.name + "!", user);
