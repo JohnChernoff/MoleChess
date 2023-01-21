@@ -92,6 +92,21 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             log(Level.WARNING, "DB connection info unspecified - DB functionality disabled");
             moleBase = new MoleBase(null, null, null, null);
         }
+        createPlayersTableIfNotExists();
+    }
+
+    private void createPlayersTableIfNotExists() {
+        moleBase.makeQuery(
+                "CREATE TABLE IF NOT EXISTS `players` (" +
+                        "`Name` varchar(30) NOT NULL," +
+                        "`Wins` int(11) NOT NULL," +
+                        "`Losses` int(11) NOT NULL," +
+                        "`Rating` int(11) NOT NULL," +
+                        "`DateCreated` datetime NOT NULL," +
+                        "`About` varchar(100) NOT NULL," +
+                        "PRIMARY KEY (`Name`)" +
+                        ") ENGINE=InnoDB DEFAULT CHARSET=latin1;")
+                .ifPresent(MoleBase.MoleQuery::runUpdate);
     }
 
     private void addUserData(MoleUser user) {
