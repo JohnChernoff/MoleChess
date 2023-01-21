@@ -88,6 +88,10 @@ public class MoleBase {
             runUpdate(varSetter, MoleBase::logSQLException);
         }
 
+        public void runUpdate() {
+            runUpdate(it -> {}, MoleBase::logSQLException);
+        }
+
         private void cleanup() {
             if (preparedStatement != null) {
                 try {
@@ -106,18 +110,34 @@ public class MoleBase {
         }
     }
 
-    private final Connection conn;
+    private static class Credentials {
+        private final String uri;
+        private final String usr;
+        private final String pwd;
+        private final String db;
 
-    public MoleBase(String uri, String usr, String pwd, String db) {
-        conn = connect(uri, usr, pwd, db);
+        private Credentials(String uri, String usr, String pwd, String db) {
+            this.uri = uri;
+            this.usr = usr;
+            this.pwd = pwd;
+            this.db = db;
+        }
     }
 
-    private Connection connect(String uri, String usr, String pwd, String db) {
+    private Connection conn;
+    private final Credentials credentials;
+
+    public MoleBase(String uri, String usr, String pwd, String db) {
+        credentials = new Credentials(uri, usr, pwd, db);
+        conn = connect(credentials);
+    }
+
+    private Connection connect(final Credentials credentials) {
         try {
-            String connStr = "jdbc:mysql://" + uri +
-                    "/" + db +
-                    "?user=" + usr +
-                    "&password=" + pwd;
+            String connStr = "jdbc:mysql://" + credentials.uri +
+                    "/" + credentials.db +
+                    "?user=" + credentials.usr +
+                    "&password=" + credentials.pwd;
             return DriverManager.getConnection(connStr);
         } catch (SQLException ex) {
             logSQLException(ex);
@@ -126,6 +146,14 @@ public class MoleBase {
     }
 
     private Optional<Connection> getConn() {
+        try {
+            if (conn.isClosed()) {
+                conn = connect(credentials);
+            }
+        } catch (SQLException e) {
+            logSQLException(e);
+            conn = null;
+        }
         return Optional.ofNullable(conn);
     }
 
