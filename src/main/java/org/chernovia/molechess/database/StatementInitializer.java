@@ -5,5 +5,5 @@ import java.sql.SQLException;
 
 @FunctionalInterface
 public interface StatementInitializer {
-    public void setVariables(PreparedStatement statement) throws SQLException;
+    void setVariables(PreparedStatement statement) throws SQLException;
 }
