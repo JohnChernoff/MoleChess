@@ -47,7 +47,7 @@ Double Mole/Inspector/Takebacker Role?
 */
 
 public class MoleServ extends Thread implements ConnListener, MoleListener {
-    static final String VERSION = "0.1";
+    static final String VERSION = "0.2";
     static final String MSG_GAME_UPDATE = "game_update";
     static final String MSG_GAMES_UPDATE = "games_update";
     static final ObjectMapper OBJ_MAPPER = new ObjectMapper();
@@ -417,8 +417,6 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         }
     }
 
-
-
     private void broadcast(MoleGame game, ObjectNode node) {
         if (game != null) game.spamNode("chat", node);
     }
@@ -489,7 +487,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             conn.tell(ZugServ.MSG_ERR, "Login Error: Missing Oauth Token");
         } else {
             if (accountData.ok) {
-                addUser(new MoleUser(conn,token,accountData.name,accountData.rating),"Login Successful: Welcome!");
+                addUser(new MoleUser(conn,token,accountData.name,accountData.rating),"Welcome to MoleChess " + VERSION + "!");
             }
             else {
                 conn.tell(ZugServ.MSG_ERR, "Login Error: weird Lichess API result");
@@ -531,14 +529,16 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private void addUser(MoleUser user, String msg, boolean add) {
         if (add) {
             if (getUserByName(user.name) != null) {
-                user.tell(ZugServ.MSG_ERR,"You're already logged in (probably from another browser)");
+                user.tell(ZugServ.MSG_ERR,"You're already logged in (possibly from another browser)");
                 user.getConn().close(); return;
             }
             users.add(user);
             addUserData(user);
             spam(ZugServ.MSG_SERV, "Welcome, " + user.name + "!", user);
         }
-        user.tell(ZugServ.MSG_LOG_SUCCESS, msg);
+        ObjectNode node = OBJ_MAPPER.createObjectNode();
+        node.put("welcome",msg); node.put("name",user.name);
+        user.tell(ZugServ.MSG_LOG_SUCCESS, node);
         updateGameList(user);
         getTopPlayers(10).ifPresent(it -> user.tell("top", it));
         refreshAndGetUserData(user);

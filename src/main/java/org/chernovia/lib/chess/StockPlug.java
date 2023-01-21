@@ -158,21 +158,21 @@ public class StockPlug {
     public float getEvalScore(String fen, int waitTime) {
         sendCommand("position fen " + fen);
         sendCommand("go movetime " + waitTime);
-
         String[] dump = getOutput(waitTime + 20).split("\n");
         String eval_str = "";
-        for (int i = dump.length - 1; i >= 0; i--) {
-            //System.out.println(i + " -> " + dump[i]);
+        for (int i = dump.length - 1; i >= 0; i--) { //System.out.println(i + " -> " + dump[i]);
             if (dump[i].startsWith("info depth ")) {
                 if (dump[i].contains("mate")) return 999;
-                else try {
-                    return Float.parseFloat(dump[i].split("score cp ")[1].split(" nodes")[0]) / 100;
-                } catch (Exception e) {
+                if (dump[i].contains("score cp")) {
                     try {
-                        return Float.parseFloat(dump[i].split("score cp ")[1].split(" upperbound nodes")[0]) / 100;
-                    } catch (Exception oops) {
-                        System.out.println("Eval error: " + oops.getMessage() + " -> " + dump[i]);
-                        System.out.println(eval_str);
+                        return Float.parseFloat(dump[i].split("score cp ")[1].split(" nodes")[0]) / 100;
+                    } catch (Exception e) {
+                        try {
+                            return Float.parseFloat(dump[i].split("score cp ")[1].split(" upperbound nodes")[0]) / 100;
+                        } catch (Exception oops) {
+                            System.out.println("Eval error: " + oops.getMessage() + " -> " + dump[i]);
+                            System.out.println(eval_str);
+                        }
                     }
                 }
             }
