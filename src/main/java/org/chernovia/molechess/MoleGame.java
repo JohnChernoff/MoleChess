@@ -400,6 +400,12 @@ public class MoleGame implements Runnable {
                     aiFill(COLOR_BLACK);
                     aiFill(COLOR_WHITE);
                 }
+                for (MolePlayer p : teams[COLOR_WHITE].players) {
+                    p.user.tell("color", "white");
+                }
+                for (MolePlayer p : teams[COLOR_BLACK].players) {
+                    p.user.tell("color", "black");
+                }
                 gameThread = new Thread(this);
                 gameThread.start();
             }
