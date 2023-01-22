@@ -6,5 +6,5 @@ import java.util.Optional;
 
 @FunctionalInterface
 public interface ResultSetMapper<R> {
-    public Optional<R> map(ResultSet resultSet) throws SQLException;
+    Optional<R> map(ResultSet resultSet) throws SQLException;
 }
