@@ -146,7 +146,7 @@ public class MoleBase {
     }
 
     private Optional<Connection> getConn() {
-        try {
+        if (conn != null) try {
             if (conn.isClosed()) {
                 conn = connect(credentials);
             }

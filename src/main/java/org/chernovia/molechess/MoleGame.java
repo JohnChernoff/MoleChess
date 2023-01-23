@@ -131,7 +131,6 @@ public class MoleGame implements Runnable {
     public static final int COLOR_UNKNOWN = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
     //public enum GAME_RESULT {ONGOING, DRAW, CHECKMATE, STALEMATE, ABANDONED}
     public enum GAME_PHASE {PREGAME, VOTING, POSTGAME}
-
     List<Color> colorList;
     private int colorPointer = 0;
     private final String READY = "ready", UNBALANCED = "unbalanced", INSUFFICIENT = "insufficient";

@@ -25,35 +25,25 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /* TODO:
-obs while playing bug (need unobs)
-~voting info (during and after game)
-~player chat text colors
-~innocent accused remain
-~ornicar2: you need to use a ConcurrentHashMap
-~Defecting Mole rating change bug
-~handle AWOL team members
-~handle draws
-~stockplug M1 blindness
-~database
-~molevote bug
-~game specific chat
-~limit number of games a user may create
-~how do I spectate that game?
-~empty/pregame board timeouts
-~handle logins with same token
-~update player leaving
-~ai voting
-~50 move rule draws
-~how do I export to pgn?
-Double Mole/Inspector/Takebacker Role?
+handle AWOL team members
+handle draws
+clarify observing, empty/pregame board timeouts
+Double Mole/Inspector/Takebacker/Captain Role?
+ai voting
+50 move rule draws
+
+?update player leaving
+?innocent accused remain
+?molevote bug
+?Defecting Mole rating change bug
 */
 
 public class MoleServ extends Thread implements ConnListener, MoleListener {
-    static final String VERSION = "0.2";
+    static final Logger LOGGER = Logger.getLogger("MoleLog");
+    static final String VERSION = getVersion("VERSION");;
     static final String MSG_GAME_UPDATE = "game_update";
     static final String MSG_GAMES_UPDATE = "games_update";
     static final ObjectMapper OBJ_MAPPER = new ObjectMapper();
-    static final Logger LOGGER = Logger.getLogger("MoleLog");
     static final Pattern ALPHANUMERIC_PATTERN = Pattern.compile("^[a-zA-Z0-9]*$");
     static final int MAX_STR_LEN = 30;
     static String STOCK_PATH = "stockfish/stockfish";
@@ -67,7 +57,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private boolean testing = false;
     private final MoleBase moleBase;
 
-    public static void main(String[] args) { //MoleGame.getRandomNames("resources/molenames.txt");
+    public static void main(String[] args) {
         new MoleServ(5555, args).start();
     }
 
@@ -320,7 +310,6 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             } else if (countGames(creator) > maxUserGames) {
                 creator.tell(ZugServ.MSG_ERR,"Failed to create game: too many games (" + maxUserGames + ")");
             } else {
-                //MoleGame game = new MoleGame(creator, title, "rnbqkbn1/pppppppP/8/8/8/8/PPPPPPP1/RNBQKBNR w KQq - 0 1",this);
                 MoleGame game = new MoleGame(creator, title, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",this);
                 game.setMoveTime(defMoveTime);
                 games.put(title, game);
@@ -712,7 +701,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 
     public static List<String> loadRandomNames(final String filename) {
         List<String> names = new ArrayList<>();
-        try { //System.out.println("Working Directory = " + System.getProperty("user.dir"));
+        try {
             InputStream stream = MoleServ.class.getResourceAsStream("/" + filename);
             Scanner scanner = new Scanner(stream);
             while (scanner.hasNextLine()) names.add(scanner.nextLine());
@@ -725,6 +714,20 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         } finally {
             log("Names: " + names.size());
         }
+    }
+
+    public static String getVersion(String filename) {
+        String version = "?";
+        try {
+            InputStream stream = MoleServ.class.getResourceAsStream("/" + filename);
+            Scanner scanner = new Scanner(stream); if (scanner.hasNextLine()) version = scanner.nextLine();
+            scanner.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            log("Version: " + version);
+        }
+        return version;
     }
 
     public static String timeString(long millis) {
