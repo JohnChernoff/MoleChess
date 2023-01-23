@@ -21,6 +21,8 @@ import java.util.function.BiConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /* TODO:
 obs while playing bug (need unobs)
@@ -93,25 +95,89 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             moleBase = new MoleBase(null, null, null, null);
         }
         createPlayersTableIfNotExists();
+        createGameTableIfNotExist();
     }
 
     private void createPlayersTableIfNotExists() {
         moleBase.makeQuery(
-                "CREATE TABLE IF NOT EXISTS `players` (" +
-                        "`Name` varchar(30) NOT NULL," +
-                        "`Wins` int(11) NOT NULL," +
-                        "`Losses` int(11) NOT NULL," +
-                        "`Rating` int(11) NOT NULL," +
-                        "`DateCreated` datetime NOT NULL," +
-                        "`About` varchar(100) NOT NULL," +
-                        "PRIMARY KEY (`Name`)" +
-                        ") ENGINE=InnoDB DEFAULT CHARSET=latin1;")
+                        "CREATE TABLE IF NOT EXISTS `players` (" +
+                                "   `Name` VARCHAR(45) NOT NULL," +
+                                "   `Wins` INT(11) NOT NULL," +
+                                "   `Losses` INT(11) NOT NULL," +
+                                "   `Rating` INT(11) NOT NULL," +
+                                "   `DateCreated` DATETIME NOT NULL," +
+                                "   `About` VARCHAR(100) NOT NULL," +
+                                "   PRIMARY KEY (`Name`)" +
+                                ")DEFAULT CHARSET = utf8;")
                 .ifPresent(MoleBase.MoleQuery::runUpdate);
+    }
+
+    private void createGameTableIfNotExist() {
+        moleBase.makeQuery(
+                        "CREATE TABLE IF NOT EXISTS `games` (" +
+                                "  `Id` BINARY(16) NOT NULL," +
+                                "  `Date` DATETIME NOT NULL," +
+                                "  `PGN` VARCHAR(300) NOT NULL," +
+                                "  `Winner` INT NOT NULL," +
+                                "  PRIMARY KEY (`Id`)" +
+                                ")DEFAULT CHARSET = utf8;")
+                .ifPresent(MoleBase.MoleQuery::runUpdate);
+        moleBase.makeQuery(
+                        "CREATE TABLE IF NOT EXISTS `teams` (" +
+                                "  `Id` INT NOT NULL AUTO_INCREMENT," +
+                                "  `Game` BINARY(16) NOT NULL," +
+                                "  `Player` VARCHAR(45) NOT NULL," +
+                                "  `Color` INT NOT NULL," +
+                                "  `Rating` INT(11) NOT NULL," +
+                                "  `Mole` INT NOT NULL," +
+                                "  PRIMARY KEY (`Id`)," +
+                                "  INDEX `GameFK_idx` (`Game` ASC) VISIBLE," +
+                                "  INDEX `PlayerFK_idx` (`Player` ASC) VISIBLE," +
+                                "  CONSTRAINT `GameFK`" +
+                                "  FOREIGN KEY (`Game`)" +
+                                "  REFERENCES `games` (`Id`)" +
+                                "  ON DELETE CASCADE" +
+                                "  ON UPDATE CASCADE," +
+                                "  CONSTRAINT `PlayerFK`" +
+                                "  FOREIGN KEY (`Player`)" +
+                                "  REFERENCES `players` (`Name`)" +
+                                "  ON DELETE CASCADE" +
+                                "  ON UPDATE CASCADE" +
+                                ")DEFAULT CHARSET = utf8;")
+                .ifPresent(MoleBase.MoleQuery::runUpdate);
+    }
+
+    public void saveGame(final String pgn, final List<MolePlayer> whiteTeam, final List<MolePlayer> blackTeam, final int winner) {
+        final String gameID = UUID.randomUUID().toString().substring(0, 16);
+        moleBase.makeQuery("INSERT INTO `games` (`Id`, `Date`, `PGN`, `Winner`) VALUES (?, CURRENT_TIMESTAMP, ?, ?)")
+                .ifPresent(query -> query.runUpdate(statement -> {
+                    statement.setString(1, gameID);
+                    statement.setString(2, pgn);
+                    statement.setInt(3, winner);
+                }));
+        final List<MolePlayer> allPlayers = Stream.concat(whiteTeam.stream(), blackTeam.stream())
+                .filter(p -> !p.ai).collect(Collectors.toList());
+        allPlayers.stream()
+                .map(players -> "(?, ?, ?, ?, ?)")
+                .reduce((a, b) -> a + ", " + b)
+                .ifPresent(teamValues -> {
+                    final String teamQuery = "INSERT INTO `teams` (`Game`, `Player`, `Color`, `Rating`, `Mole`) VALUES " + teamValues;
+                    moleBase.makeQuery(teamQuery).ifPresent(query -> query.runUpdate(statement -> {
+                        int i = 1;
+                        for (MolePlayer player : allPlayers) {
+                            statement.setString(i++, gameID);
+                            statement.setString(i++, player.user.name);
+                            statement.setInt(i++, player.color);
+                            statement.setInt(i++, player.user.data.rating);
+                            statement.setInt(i++, player.role == MolePlayer.ROLE.MOLE ? 1 : 0);
+                        }
+                    }));
+                });
     }
 
     private void addUserData(MoleUser user) {
         moleBase.makeQuery(
-                        "INSERT INTO `players` (`Name`, `Wins`, `Losses`, `Rating`, `DateCreated`, `About`) " +
+                        "INSERT IGNORE INTO `players` (`Name`, `Wins`, `Losses`, `Rating`, `DateCreated`, `About`) " +
                                 "VALUES (?, '0', '0', '1600', CURRENT_TIMESTAMP, '')")
                 .ifPresent(query -> query.runUpdate(statement -> statement.setString(1, user.name)));
     }

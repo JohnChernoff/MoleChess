@@ -1,15 +1,18 @@
 package org.chernovia.molechess;
 
 import java.util.ArrayList;
+import java.util.List;
 
 public interface MoleListener {
-    public void started(MoleGame game);
+    void started(MoleGame game);
 
-    public void updateUserData(ArrayList<MolePlayer> winners, ArrayList<MolePlayer> losers, boolean draw);
+    void updateUserData(ArrayList<MolePlayer> winners, ArrayList<MolePlayer> losers, boolean draw);
 
-    public void updateUser(MoleUser user, MoleGame game, MoleResult action, boolean movelist);
+    void updateUser(MoleUser user, MoleGame game, MoleResult action, boolean movelist);
 
-    public void updateGame(MoleGame game, MoleResult action, boolean movelist);
+    void updateGame(MoleGame game, MoleResult action, boolean movelist);
 
-    public void finished(MoleGame game);
+    void finished(MoleGame game);
+
+    void saveGame(String pgn, List<MolePlayer> whiteTeam, List<MolePlayer> blackTeam, int winner);
 }
