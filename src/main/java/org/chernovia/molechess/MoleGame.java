@@ -12,6 +12,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class MoleGame implements Runnable {
 
@@ -161,6 +162,7 @@ public class MoleGame implements Runnable {
     private float currentGUIHue = (float) Math.random();
     private boolean PASTELS = false;
     public static final Pattern VALID_MOVE_PATTERN = Pattern.compile("[a-h][1-8][a-h][1-8][qQrRbBnN]?");
+    private List<String> selectedMoves = new ArrayList<>();
 
     public MoleGame(MoleUser c, String t, String startFEN, MoleListener l) {
         creator = c;
@@ -560,6 +562,7 @@ public class MoleGame implements Runnable {
                 if (makeMove(move).success) {
                     moveHistory.add(getMoveVotes(turn, board.getFen(), move));
                     update(new MoleResult("Selected Move: " + move.getSan()), true);
+                    selectedMoves.add(move.getSan());
                     if (playing) {
                         clearMoveVotes(turn);
                         turn = getNextTurn();
@@ -675,6 +678,7 @@ public class MoleGame implements Runnable {
 
     //handle aborts
     public void endGame(int winner, String reason) {
+        listener.saveGame(createPGN(), teams[COLOR_WHITE].players, teams[COLOR_BLACK].players, winner);
         if (winner != COLOR_UNKNOWN) {
             spam(colorString(winner) + " wins by " + reason + "!"); //award(winner,winBonus);
             listener.updateUserData(teams[winner].players, teams[getNextTurn(winner)].players, false);
@@ -685,6 +689,13 @@ public class MoleGame implements Runnable {
         }
         playing = false;
         if (gameThread != null && gameThread.getState() == Thread.State.TIMED_WAITING) gameThread.interrupt();
+    }
+
+    private String createPGN() {
+        if (selectedMoves.size() % 2 == 1) selectedMoves.add("");
+        return IntStream.iterate(0, i -> i + 1).limit(selectedMoves.size() / 2)
+                .mapToObj(i -> (i + 1) + ". " + selectedMoves.get(i * 2) + " " + selectedMoves.get(i * 2 + 1))
+                .reduce((a, b) -> a + " " + b).orElse("");
     }
 
     ////new MolePlayer(MoleServ.DUMMIES[i++][color], this, color, nextGUIColor());
