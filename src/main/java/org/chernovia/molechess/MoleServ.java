@@ -82,7 +82,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                     dbuser[0], dbpass[0], "molechess");
         } else {
             log(Level.WARNING, "DB connection info unspecified - DB functionality disabled");
-            moleBase = new MoleBase(null, null, null, null);
+            moleBase = new MoleBase();
         }
         createPlayersTableIfNotExists();
         createGameTableIfNotExist();
@@ -137,6 +137,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 .ifPresent(MoleBase.MoleQuery::runUpdate);
     }
 
+    // TODO make atomic?
     public void saveGame(final String pgn, final List<MolePlayer> whiteTeam, final List<MolePlayer> blackTeam, final int winner) {
         final String gameID = UUID.randomUUID().toString().substring(0, 16);
         moleBase.makeQuery("INSERT INTO `games` (`Id`, `Date`, `PGN`, `Winner`) VALUES (?, CURRENT_TIMESTAMP, ?, ?)")

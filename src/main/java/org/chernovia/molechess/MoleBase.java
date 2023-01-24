@@ -2,45 +2,47 @@ package org.chernovia.molechess;
 
 import org.chernovia.molechess.database.ResultSetMapper;
 import org.chernovia.molechess.database.StatementInitializer;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.sql.*;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 
-public class MoleBase {
-    static class MoleQuery {
-        private final String statement;
-        private final PreparedStatement preparedStatement;
-        private final ResultSet resultSet;
-        private final Connection conn;
+public final class MoleBase {
+    static final class MoleQuery {
+        private final @NotNull String statement;
+        private final @Nullable PreparedStatement preparedStatement;
+        private final @Nullable ResultSet resultSet;
+        private final @NotNull Connection conn;
 
-        public MoleQuery(final String statement, final Connection conn) {
+        private MoleQuery(final @NotNull String statement, final @NotNull Connection conn) {
             this.statement = statement;
             this.conn = conn;
             this.preparedStatement = null;
             this.resultSet = null;
         }
 
-        private MoleQuery(final String statement, final PreparedStatement preparedStatement, final ResultSet resultSet,
-                          final Connection conn) {
+        private MoleQuery(final @NotNull String statement, final @NotNull PreparedStatement preparedStatement,
+                          final @NotNull ResultSet resultSet, final @NotNull Connection conn) {
             this.statement = statement;
             this.resultSet = resultSet;
             this.preparedStatement = preparedStatement;
             this.conn = conn;
         }
 
-        private Optional<MoleQuery> withResultSet(final StatementInitializer init) {
+        private @NotNull Optional<MoleQuery> withResultSet(final @NotNull StatementInitializer init) {
             return prepareStatement(init).flatMap(s ->
                     runQuery(s).flatMap(q ->
                             Optional.of(new MoleQuery(this.statement, s, q, this.conn))));
         }
 
-        private Optional<ResultSet> getResultSet() {
+        private @NotNull Optional<ResultSet> getResultSet() {
             return Optional.ofNullable(this.resultSet);
         }
 
-        public <R> Optional<R> mapResultSet(final StatementInitializer init, final ResultSetMapper<R> mapper) {
+        public <R> @NotNull Optional<R> mapResultSet(final @NotNull StatementInitializer init, final @NotNull ResultSetMapper<R> mapper) {
             return withResultSet(init).flatMap(it -> it.getResultSet().flatMap(rs -> {
                 try {
                     return mapper.map(rs);
@@ -53,70 +55,75 @@ public class MoleBase {
             }));
         }
 
-        private Optional<PreparedStatement> prepareStatement(final StatementInitializer init) {
+        private @NotNull Optional<PreparedStatement> prepareStatement(final @NotNull StatementInitializer init) {
             try {
-                final PreparedStatement preparedStatement = conn.prepareStatement(statement);
-                init.setVariables(preparedStatement);
-                return Optional.of(preparedStatement);
-            } catch (SQLException e) {
+                final @Nullable PreparedStatement preparedStatement = conn.prepareStatement(statement);
+                if (preparedStatement != null) {
+                    init.setVariables(preparedStatement);
+                }
+                return Optional.ofNullable(preparedStatement);
+            } catch (final @NotNull SQLException e) {
                 logSQLException(e);
                 cleanup();
                 return Optional.empty();
             }
         }
 
-        private Optional<ResultSet> runQuery(final PreparedStatement statement) {
+        private @NotNull Optional<ResultSet> runQuery(final @NotNull PreparedStatement statement) {
             try {
                 return Optional.of(statement.executeQuery());
-            } catch (SQLException e) {
+            } catch (final @NotNull SQLException e) {
                 logSQLException(e);
                 cleanup();
                 return Optional.empty();
             }
         }
 
-        public void runUpdate(final StatementInitializer varSetter, final Consumer<SQLException> whenFails) {
-            try (final PreparedStatement preparedStatement = conn.prepareStatement(statement)) {
-                varSetter.setVariables(preparedStatement);
-                preparedStatement.executeUpdate();
-            } catch (SQLException e) {
+        public void runUpdate(final @NotNull StatementInitializer init, final @NotNull Consumer<SQLException> whenFails) {
+            try (final @Nullable PreparedStatement preparedStatement = conn.prepareStatement(statement)) {
+                if (preparedStatement != null) {
+                    init.setVariables(preparedStatement);
+                    preparedStatement.executeUpdate();
+                }
+            } catch (final @NotNull SQLException e) {
                 whenFails.accept(e);
             }
         }
 
-        public void runUpdate(final StatementInitializer varSetter) {
+        public void runUpdate(final @NotNull StatementInitializer varSetter) {
             runUpdate(varSetter, MoleBase::logSQLException);
         }
 
         public void runUpdate() {
-            runUpdate(it -> {}, MoleBase::logSQLException);
+            runUpdate(it -> {
+            }, MoleBase::logSQLException);
         }
 
         private void cleanup() {
             if (preparedStatement != null) {
                 try {
                     preparedStatement.close();
-                } catch (SQLException e) {
+                } catch (final @NotNull SQLException e) {
                     logSQLException(e);
                 }
             }
             if (resultSet != null) {
                 try {
                     resultSet.close();
-                } catch (SQLException e) {
+                } catch (final @NotNull SQLException e) {
                     logSQLException(e);
                 }
             }
         }
     }
 
-    private static class Credentials {
-        private final String uri;
-        private final String usr;
-        private final String pwd;
-        private final String db;
+    private static final class Credentials {
+        private final @NotNull String uri;
+        private final @NotNull String usr;
+        private final @NotNull String pwd;
+        private final @NotNull String db;
 
-        private Credentials(String uri, String usr, String pwd, String db) {
+        private Credentials(final @NotNull String uri, final @NotNull String usr, final @NotNull String pwd, final @NotNull String db) {
             this.uri = uri;
             this.usr = usr;
             this.pwd = pwd;
@@ -124,15 +131,20 @@ public class MoleBase {
         }
     }
 
-    private Connection conn;
-    private final Credentials credentials;
+    private @Nullable Connection conn;
+    private final @Nullable Credentials credentials;
 
-    public MoleBase(String uri, String usr, String pwd, String db) {
+    public MoleBase(final @NotNull String uri, final @NotNull String usr, final @NotNull String pwd, final @NotNull String db) {
         credentials = new Credentials(uri, usr, pwd, db);
         conn = connect(credentials);
     }
 
-    private Connection connect(final Credentials credentials) {
+    public MoleBase() {
+        credentials = null;
+        conn = null;
+    }
+
+    private @Nullable Connection connect(final @NotNull Credentials credentials) {
         try {
             String connStr = "jdbc:mysql://" + credentials.uri +
                     "/" + credentials.db +
@@ -145,23 +157,23 @@ public class MoleBase {
         }
     }
 
-    private Optional<Connection> getConn() {
-        if (conn != null) try {
-            if (conn.isClosed()) {
+    private @NotNull Optional<Connection> getConn() {
+        try {
+            if (credentials != null && conn != null && conn.isClosed()) {
                 conn = connect(credentials);
             }
-        } catch (SQLException e) {
+        } catch (final @NotNull SQLException e) {
             logSQLException(e);
             conn = null;
         }
         return Optional.ofNullable(conn);
     }
 
-    public Optional<MoleQuery> makeQuery(final String queryStr) {
+    public @NotNull Optional<MoleQuery> makeQuery(final @NotNull String queryStr) {
         return getConn().flatMap(conn -> Optional.of(new MoleQuery(queryStr, conn)));
     }
 
-    private static void logSQLException(SQLException e) {
+    private static void logSQLException(final @NotNull SQLException e) {
         MoleServ.log(Level.SEVERE, "SQLException: " + e.getMessage());
         MoleServ.log(Level.SEVERE, "SQLState: " + e.getSQLState());
         MoleServ.log(Level.SEVERE, "VendorError: " + e.getErrorCode());
