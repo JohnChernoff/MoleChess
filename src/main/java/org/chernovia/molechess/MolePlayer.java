@@ -5,6 +5,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.bhlangonijr.chesslib.move.Move;
 
 import java.awt.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.Stack;
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 public class MolePlayer implements StockListener {
 
@@ -24,6 +29,8 @@ public class MolePlayer implements StockListener {
     ROLE role = ROLE.PLAYER;
     Color guiColor;
 
+    Deque<Long> messageStack = new ConcurrentLinkedDeque<>();
+
     //TODO: fix color assignment bug when player rejoins
     public MolePlayer(MoleUser usr, MoleGame g, int c, Color c2) {
         user = usr;
@@ -32,6 +39,17 @@ public class MolePlayer implements StockListener {
         guiColor = c2;
         score = 0;
         skipped = 0;
+    }
+
+    public boolean newMessage(int max, long millis) {
+        long currentTime = System.currentTimeMillis(); int n = 0; long t = currentTime - millis;
+        for (long msg : messageStack) {
+            if (msg > t) n++;
+            else messageStack.remove(msg);
+        }
+        if (n > max) return false;
+        messageStack.add(currentTime);
+        return true;
     }
 
     public boolean isActive() {

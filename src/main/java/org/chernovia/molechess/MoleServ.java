@@ -40,7 +40,7 @@ ai voting
 
 public class MoleServ extends Thread implements ConnListener, MoleListener {
     static final Logger LOGGER = Logger.getLogger("MoleLog");
-    static final String VERSION = getVersion("VERSION");;
+    static final String VERSION = getVersion("VERSION");
     static final String MSG_GAME_UPDATE = "game_update";
     static final String MSG_GAMES_UPDATE = "games_update";
     static final ObjectMapper OBJ_MAPPER = new ObjectMapper();
@@ -460,7 +460,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                         MoleGame g = games.get(source);
                         if (g  != null) {
                             MolePlayer p = g.getPlayer(user);
-                            if (p != null) g.spam("chat",dataNode.get("msg").asText("?"),p);
+                            if (p != null) {
+                                if (p.newMessage(5,10000)) g.spam("chat",dataNode.get("msg").asText("?"),p);
+                                else user.tell("Sorry, you're typing too fast!",g);
+                            }
                         }
                     }
                 } else {
