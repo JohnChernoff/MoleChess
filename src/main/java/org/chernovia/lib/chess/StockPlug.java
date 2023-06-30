@@ -30,7 +30,7 @@ public class StockPlug {
             processReader = new BufferedReader(new InputStreamReader(engineProcess.getInputStream()));
             processWriter = new OutputStreamWriter(engineProcess.getOutputStream());
         } catch (IOException e) {
-            MoleServ.log("Stockfish IOError"); //e.printStackTrace();
+            MoleServ.log("Stockfish IOError"); e.printStackTrace();
             return false;
         }
         id = engineProcess.pid() + "";  //System.out.println("New Process: " + id);

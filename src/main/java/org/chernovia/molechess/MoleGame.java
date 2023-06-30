@@ -145,7 +145,8 @@ public class MoleGame implements Runnable {
     private long lastActivity;
     private int minPlayers = 3, maxPlayers = 6, kickFlag = 2;
     private int turn;
-    private int moveTime = 60, postTime = 300, preTime = 999;
+    private int moveTime = 60, postTime = 300, preTime = 999, newTime = 0;
+    private long phaseStamp = 0;
     private double calcFactor = .25;
     private Board board;
     private Thread gameThread;
@@ -219,7 +220,7 @@ public class MoleGame implements Runnable {
     }
 
     public void setMoveTime(int t) {
-        moveTime = t;
+        newTime = t;
     }
 
     public int getKickFlag() {
@@ -260,6 +261,10 @@ public class MoleGame implements Runnable {
         obj.put("creator", creator.name);
         obj.put("currentFEN", board.getFen());
         if (history) obj.set("history", historyToJSON());
+        long elapsed = (System.currentTimeMillis() - phaseStamp) / 1000;
+        if (phase != GAME_PHASE.PREGAME) obj.put("timeRemaining",moveTime - elapsed);
+        obj.put("turn", turn);
+        obj.put("phase",phase.toString());
         return obj;
     }
 
@@ -558,10 +563,6 @@ public class MoleGame implements Runnable {
                     spam("No legal moves selected, picking randomly...");
                     move = pickMove(board.legalMoves()); move.setSan(getSan(move,turn));
                 } else {
-                    //spam("Picking randomly from the following moves:"); // \n" + listMoves(turn));
-                    //for (MolePlayer p : teams[turn].players) {
-                    //    spam(p.user.name + " -> " + ((p.move == null) ? "-" : p.move.getSan()),p);
-                    //}
                     move = pickMove(moveList);
                 }
                 if (makeMove(move).success) {
@@ -653,19 +654,12 @@ public class MoleGame implements Runnable {
     private boolean newPhase(GAME_PHASE p) { return newPhase(p,0); }
     private boolean newPhase(GAME_PHASE p, int seconds) {
         phase = p;
-        spam("phase", phase.toString());
+        if (newTime > 0) { moveTime = newTime; newTime = 0; }
+        phaseStamp = System.currentTimeMillis();
+        spamNode("phase",toJSON(false));
         boolean timeout = true;
         if (seconds > 0) {
-            ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
-            node.put("seconds", seconds); //node.put("max_seconds",moveTime);
-            node.put("turn", turn);
-            node.put("title", title);
-            spamNode("countdown", node);
-            try {
-                Thread.sleep((seconds * 1000L));
-            } catch (InterruptedException e) {
-                timeout = false;
-            }
+            try { Thread.sleep((seconds * 1000L)); } catch (InterruptedException e) { timeout = false; }
         }
         if (playing) endgameCheck();
         return timeout;

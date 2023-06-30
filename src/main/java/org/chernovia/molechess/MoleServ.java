@@ -505,8 +505,24 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             case "up", "uptime" -> user.tell(ZugServ.MSG_SERV,
                     "Uptime: " + timeString(System.currentTimeMillis() - startTime));
             case "finger" -> refreshAndGetUserData(user).ifPresent(it -> user.tell(ZugServ.MSG_SERV, it.toString()));
+            case "down" ->  shutdown(user,5);
             default -> user.tell(ZugServ.MSG_ERR, "Error: command not found");
         }
+    }
+
+    private void shutdown(MoleUser user, int seconds) {
+        if (user.name.equals("ZugAddict")) {
+            spam(ZugServ.MSG_SERV,"Shutting down in " + seconds + " seconds...");
+            try {
+                Thread.sleep(seconds * 1000);
+                serv.stopSrv();
+                System.exit(-1);
+            }
+            catch (InterruptedException e) {
+                spam(ZugServ.MSG_SERV,"Er, never mind.");
+            }
+        }
+        else user.tell(ZugServ.MSG_ERR,"Nice try.");
     }
 
     private void spam(String type, String msg) {
