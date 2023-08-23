@@ -1,0 +1,11 @@
+Then mole is incorrectly voted off:
+
+Mole remains on team, but can only move a piece determined by the opposing mole (
+opposing mole can also veto a successful mole move, but then a mole hint is revealed
+
+mole hints:
+
+a previous move vote is randomly selected and the mole's move is revealed
+
+if an opposing mole correctly guesses the mole's move, the mole defects to the other side
+

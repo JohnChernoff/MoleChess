@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.chernovia.lib.zugserv.Connection;
 import org.chernovia.lib.zugserv.ZugServ;
+
+import java.util.ArrayList;
 import java.util.Optional;
 
 public class MoleUser {
@@ -12,6 +14,7 @@ public class MoleUser {
     int blitzRating;
     private Connection conn;
     public MoleData data;
+    private ArrayList<Connection> observers = new ArrayList<>();
 
     public class MoleData {
         String about;
@@ -48,6 +51,10 @@ public class MoleUser {
         this.oauth = o;
         this.name = n;
         blitzRating = r;
+    }
+
+    public void addObserver(Connection c) {
+        if (!observers.contains(c)) observers.add(c);
     }
 
     public void setData(int wins, int losses, int rating, String about) {
@@ -92,8 +99,10 @@ public class MoleUser {
     }
 
     public void tell(String type, JsonNode node) {
-        if (this.conn != null)
-            this.conn.tell(type, node);
+        if (this.conn != null) this.conn.tell(type, node); //TODO: check status?
+        for (Connection obs : observers) {
+            if (obs.getStatus() != Connection.Status.STATUS_DISCONNECTED) obs.tell(type,node);
+        }
     }
 
     public JsonNode toJSON(boolean ratingOnly) {

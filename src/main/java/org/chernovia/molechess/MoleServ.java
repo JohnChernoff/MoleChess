@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /* TODO:
-handle AWOL team members
+~handle AWOL team members
 handle draws
 clarify observing, empty/pregame board timeouts
 Double Mole/Inspector/Takebacker/Captain Role?
@@ -46,6 +46,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     static final ObjectMapper OBJ_MAPPER = new ObjectMapper();
     static final Pattern ALPHANUMERIC_PATTERN = Pattern.compile("^[a-zA-Z0-9]*$");
     static final int MAX_STR_LEN = 30;
+    static String LOG_PATH = "%h/molechess/logs/";
     static String STOCK_PATH = "stockfish/stockfish";
     static int STOCK_STRENGTH = 2000, STOCK_MOLE_STRENGTH = 1500;
     private final ArrayList<MoleUser> users = new ArrayList<>();
@@ -66,6 +67,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         String[] path = parser.getArgumentValue("stockpath");
         if (path != null) STOCK_PATH = path[0];
         log("Stock Path: " + STOCK_PATH);
+        path = parser.getArgumentValue("logpath");
+        if (path != null) LOG_PATH = path[0];
+        log("Log Path: " + LOG_PATH);
         String[] movetime = parser.getArgumentValue("movetime");
         if (movetime != null) defMoveTime = Integer.parseInt(movetime[0]);
         log("Move Time: " + defMoveTime);
@@ -321,6 +325,14 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         }
     }
 
+    public void handleObs(Connection conn, String name) {
+        MoleUser user = getUserByName(name);
+        if (user != null) {
+            user.addObserver(conn);
+            user.tell("Observer added");
+        }
+    }
+
     public void newMsg(Connection conn, int channel, String msg) { //log("NewMsg: " + msg);
         try {
             MoleUser user = getUser(conn);
@@ -333,6 +345,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             String typeTxt = typeNode.asText(), dataTxt = dataNode.asText();
             if (typeTxt.equals("login")) {
                 handleLogin(conn, dataTxt, testing);
+            } else if (typeTxt.equals("obs")) {
+                handleObs(conn,dataTxt);
             } else if (user == null) {
                 conn.tell(ZugServ.MSG_ERR, "Please log in");
             } else if (typeTxt.equals("newgame")) {
@@ -648,7 +662,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         if (action.success) {
             if (action.player != null) game.spam(action.message,action.player);
             else game.spam(action.message);
-            game.spamNode(MSG_GAME_UPDATE, game.toJSON(moves));
+            game.spamNode(MSG_GAME_UPDATE, game.toJSON(moves)); //updateObs(game,moves);
         } else {
             game.spam(ZugServ.MSG_ERR, action.message);
         }
