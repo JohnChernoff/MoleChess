@@ -134,7 +134,6 @@ public class MoleGame implements Runnable {
     public static final int COLOR_UNKNOWN = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
     //public enum GAME_RESULT {ONGOING, DRAW, CHECKMATE, STALEMATE, ABANDONED}
     public enum GAME_PHASE {PREGAME, VOTING, POSTGAME}
-    public enum PREDICTION_LEVEL {NONE,MOLE,MOLE_SUCCESS,ALL,ALL_SUCCESS}
     List<Color> colorList;
     private int colorPointer = 0;
     private final String READY = "ready", UNBALANCED = "unbalanced", INSUFFICIENT = "insufficient";
@@ -163,7 +162,11 @@ public class MoleGame implements Runnable {
     private boolean endOnMutualAccusation = false;
     private boolean endOnAccusation = false;
     private boolean defection = true;
-    private PREDICTION_LEVEL predictionLevel = PREDICTION_LEVEL.MOLE;
+    private boolean moleVeto = false;
+    private boolean molePiecePrediction = false;
+    private boolean moleMovePrediction = false;
+    private boolean teamMovePrediction = false;
+    private boolean hideMoveVote = false;
     private float currentGUIHue = (float) Math.random();
     private boolean PASTELS = false;
     public static final Pattern VALID_MOVE_PATTERN = Pattern.compile("[a-h][1-8][a-h][1-8][qQrRbBnN]?");
@@ -234,12 +237,50 @@ public class MoleGame implements Runnable {
         return title;
     }
 
+    public void setMoveTime(int t) {
+        newTime = t;
+        spam("Move Time: " + t);
+    }
+
     public int getMaxPlayers() {
         return maxPlayers;
     }
 
-    public void setMoveTime(int t) {
-        newTime = t;
+    public void setMaxPlayers(int n) {
+        if (n > minPlayers && n < 99) {
+            maxPlayers = n;
+            spam("Max Players: " + n);
+        }
+    }
+
+    public void setMoleVeto(boolean bool) {
+        if (moleVeto != bool) {
+            moleVeto = bool; spam("Mole Veto: " + moleVeto);
+        }
+    }
+
+    public void setMolePiecePrediction(boolean bool) {
+        if (molePiecePrediction != bool) {
+            molePiecePrediction = bool; spam("Mole Piece Prediction: " + molePiecePrediction);
+        }
+    }
+
+    public void setMoleMovePrediction(boolean bool) {
+        if (moleMovePrediction != bool) {
+            moleMovePrediction = bool; spam("Mole Move Prediction: " + moleMovePrediction);
+        }
+    }
+
+    public void setTeamMovePrediction(boolean bool) {
+        if (teamMovePrediction != bool) {
+            teamMovePrediction = bool; spam("Team Move Prediction: " + teamMovePrediction);
+        }
+    }
+
+    public void setHideMoveVote(boolean bool) {
+        if (hideMoveVote != bool) {
+            hideMoveVote = bool; spam("Hide Move Votes: " + hideMoveVote);
+        }
     }
 
     public int getKickFlag() {
@@ -516,13 +557,14 @@ public class MoleGame implements Runnable {
     }
 
     private void updateMoveVotes() {
-        String movePfx = moveNum + (turn == COLOR_BLACK ? "..." : ". ");
         ArrayNode listNode = MoleServ.OBJ_MAPPER.createArrayNode();
         for (MolePlayer p : teams[turn].players) {
             ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
             node.put("player_name",p.user.name);
             node.put("player_color",p.guiColor.getRGB());
-            node.put("player_move",movePfx + (p.move != null ? p.move.getSan() : "?"));
+            if (p.move == null) node.put("player_move","-");
+            else if (hideMoveVote) node.put("player_move","(hidden)");
+            else node.put("player_move",getTurnPrefix() + (p.move.getSan()));
             listNode.add(node);
         }
         ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
@@ -611,8 +653,8 @@ public class MoleGame implements Runnable {
     }
 
     private boolean testPrediction(MolePlayer mole) {
-        if (mole == null || mole.move == null) return false;
-        if (predictionLevel == PREDICTION_LEVEL.MOLE) {
+        if (moleMovePrediction) {
+            if (mole == null || mole.move == null) return false;
             MolePlayer oppMole = getMole(getNextTurn());
             if (oppMole == null) return false;
             else return (oppMole.prediction == mole.move);
@@ -1039,7 +1081,7 @@ public class MoleGame implements Runnable {
         else {
             if (colorPointer < colorList.size()) return colorList.get(colorPointer++);
             else {
-                colorPointer = 0; return colorList.get(colorPointer);
+                PASTELS = true; return nextGUIColor(); //colorPointer = 0; return colorList.get(colorPointer);
             }
         }
     }

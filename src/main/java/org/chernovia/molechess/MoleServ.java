@@ -431,32 +431,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 } else {
                     game.resign(user);
                 }
-            } else if (typeTxt.equals("time")) {
-                JsonNode gameNode = dataNode.get("game");
-                JsonNode timeNode = dataNode.get("time");
-                if (gameNode == null) {
-                    user.tell(ZugServ.MSG_ERR, "Game not specified");
-                } else if (timeNode == null) {
-                    user.tell(ZugServ.MSG_ERR, "Time not specified");
-                } else {
-                    String gameTitle = gameNode.asText();
-                    MoleGame game = games.get(gameTitle);
-                    if (game == null) {
-                        user.tell(ZugServ.MSG_ERR, "Game not found: " + gameTitle);
-                    } else {
-                        if (game.getCreator().equals(user)) {
-                            int time = timeNode.asInt();
-                            if (time > 0 && time < 999) {
-                                game.setMoveTime(time);
-                                game.spam("New Time Control: " + time + " seconds per move");
-                            } else {
-                                user.tell(ZugServ.MSG_ERR, "Invalid Time: " + time);
-                            }
-                        } else {
-                            user.tell(ZugServ.MSG_ERR, "Only the creator of this game can set the time");
-                        }
-                    }
-                }
+            } else if (typeTxt.equals("opt")) {
+                setGameOptions(user,dataNode);
             } else if (typeTxt.equals("top")) {
                 getTopPlayers(Integer.parseInt(dataTxt)).ifPresent(it -> user.tell("top", it));
             } else if (typeTxt.equals("chat")) {
@@ -502,6 +478,36 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         } catch (NullPointerException e) {
             e.printStackTrace();
         }
+    }
+
+    private void setGameOptions(MoleUser user, JsonNode data) {
+        JsonNode gameNode = data.get("game");
+        if (gameNode == null) return;
+        MoleGame game = games.get(gameNode.asText());
+        if (game == null) return;
+        if (!game.getCreator().equals(user)) return;
+
+        JsonNode time = data.get("time");
+        if (time != null) game.setMoveTime(time.asInt());
+
+        JsonNode maxPlayers = data.get("max_players");
+        if (maxPlayers != null) game.setMaxPlayers(maxPlayers.asInt());
+
+        JsonNode moleVeto = data.get("mole_veto");
+        if (moleVeto != null) game.setMoleVeto(moleVeto.asBoolean());
+
+        JsonNode molePredictPiece = data.get("mole_predict_piece");
+        if (molePredictPiece != null)  game.setMolePiecePrediction(molePredictPiece.asBoolean());
+
+        JsonNode molePredictMove = data.get("mole_predict_move");
+        if (molePredictMove != null) game.setMoleMovePrediction(molePredictMove.asBoolean());
+
+        JsonNode teamPredictMove = data.get("team_predict_move");
+        if (teamPredictMove != null) game.setTeamMovePrediction(teamPredictMove.asBoolean());
+
+        JsonNode hideMoveVote = data.get("hide_move_vote");
+        if (hideMoveVote != null) game.setHideMoveVote(hideMoveVote.asBoolean());
+
     }
 
     private void broadcast(MoleGame game, ObjectNode node) {
