@@ -317,7 +317,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 MoleGame game = new MoleGame(creator, title, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",this);
                 game.setMoveTime(defMoveTime);
                 games.put(title, game);
-                game.addPlayer(creator, color); //TODO: bounds check color?
+                game.addPlayer(creator, color);
                 updateGames(false);
             }
         } else {
@@ -430,6 +430,17 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                     user.tell(ZugServ.MSG_ERR, "Game not found: " + dataTxt);
                 } else {
                     game.resign(user);
+                }
+            } else if (typeTxt.equals("veto")) {
+                JsonNode title = dataNode.get("game");
+                JsonNode confirm = dataNode.get("confirm");
+                if (title != null && confirm != null) {
+                    MoleGame game = games.get(title.asText());
+                    if (game == null) {
+                        user.tell(ZugServ.MSG_ERR, "Game not found: " + dataTxt);
+                    } else {
+                        game.handleVeto(user,confirm.asBoolean());
+                    }
                 }
             } else if (typeTxt.equals("opt")) {
                 setGameOptions(user,dataNode);
