@@ -8,6 +8,8 @@ import com.github.bhlangonijr.chesslib.move.Move;
 
 import java.awt.*;
 import java.io.IOException;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -44,7 +46,7 @@ public class MoleGame implements Runnable {
     }
 
     class MoveVotes {
-        ArrayList<MoveVote> selected;
+        MoveVote selected;
         ArrayList<MoveVote> alts;
         String fen;
         int color;
@@ -53,9 +55,8 @@ public class MoleGame implements Runnable {
             fen = fenString;
             color = c;
             alts = new ArrayList<>();
-            selected = new ArrayList<>();
             for (MoveVote mv : votes) {
-                if (mv.selected) selected.add(mv);
+                if (mv.selected) selected = mv;
                 else alts.add(mv);
             }
         }
@@ -65,9 +66,7 @@ public class MoleGame implements Runnable {
             ArrayNode altsArray = MoleServ.OBJ_MAPPER.createArrayNode();
             for (MoveVote alt : alts) altsArray.add(alt.toJSON());
             node.set("alts", altsArray);
-            ArrayNode selectedArray = MoleServ.OBJ_MAPPER.createArrayNode();
-            for (MoveVote selectedMove : selected) selectedArray.add(selectedMove.toJSON());
-            node.set("selected", selectedArray);
+            node.put("selected", selected.toJSON());
             node.put("fen", fen);
             node.put("turn", color);
             return node;
@@ -76,10 +75,11 @@ public class MoleGame implements Runnable {
 
     class MoleTeam {
         ArrayList<MolePlayer> players;
+        ArrayList<MolePlayer> startPlayers;
         int voteCount;
 
         public MoleTeam() {
-            players = new ArrayList<>();
+            players = new ArrayList<>(); startPlayers = new ArrayList<>();
             voteCount = 0;
         }
 
@@ -90,6 +90,17 @@ public class MoleGame implements Runnable {
             node.set("players", playerArray);
             node.put("vote_count", voteCount);
             return node;
+        }
+
+        @Override
+        public String toString() { return toString(false); }
+        public String toString(boolean original) {
+            StringBuffer s = new StringBuffer();
+            for (MolePlayer player : original ? startPlayers : players) {
+                s.append(player.user.name);
+                if (player.role == MolePlayer.ROLE.MOLE) s.append("(*) "); else s.append(" ");
+            }
+            return s.toString().trim();
         }
     }
     class BucketList {
@@ -172,7 +183,6 @@ public class MoleGame implements Runnable {
     private boolean teamMovePrediction = false;
     private boolean hideMoveVote = false;
     private boolean PASTELS = false;
-    private boolean MOLETEST = true;
 
     public MoleGame(MoleUser c, String t, String startFEN, MoleListener l) {
         gameLog = Logger.getLogger(t);
@@ -324,7 +334,7 @@ public class MoleGame implements Runnable {
         obj.put("creator", creator.name);
         obj.put("currentFEN", board.getFen());
         if (history) obj.set("history", historyToJSON());
-        long elapsed = (System.currentTimeMillis() - phaseStamp) / 1000;
+        long elapsed = (System.currentTimeMillis() - phaseStamp) / 1000; //TODO: weird negative time bug
         if (phase == GAME_PHASE.VOTING) obj.put("timeRemaining",moveTime - elapsed);
         else if (phase == GAME_PHASE.VETO) obj.put("timeRemaining",vetoTime - elapsed);
         obj.put("turn", turn);
@@ -745,7 +755,7 @@ public class MoleGame implements Runnable {
     private ArrayList<MoveVote> getMoves(MolePlayer player) {
         ArrayList<MoveVote> moveList = new ArrayList<>();
         for (MoveVotes moves : getMoves(player.color)) {
-            for (MoveVote move : moves.selected) if (move.player.equals(player)) moveList.add(move);
+            if (moves.selected.player.equals(player)) moveList.add(moves.selected);
             for (MoveVote move : moves.alts) if (move.player.equals(player)) moveList.add(move);
         }
         return moveList;
@@ -869,27 +879,45 @@ public class MoleGame implements Runnable {
 
     //handle aborts
     public void endGame(int winner, String reason) {
-        listener.saveGame(createPGN(), teams[COLOR_WHITE].players, teams[COLOR_BLACK].players, winner);
+        String result;
         if (winner != COLOR_UNKNOWN) {
             spam(colorString(winner) + " wins by " + reason + "!"); //award(winner,winBonus);
             listener.updateUserData(teams[winner].players, teams[getNextTurn(winner)].players, false);
-
+            result = (winner == COLOR_WHITE) ? "1-0" : "0-1";
         } else {
             spam("Game Over! (" + reason + ")");
             listener.updateUserData(teams[COLOR_WHITE].players, teams[COLOR_BLACK].players, true);
+            if (reason.equals("deserted")) result = "aborted"; else result = "1/2-1/2";
         }
+
+        listener.saveGame(createPGN(result), teams[COLOR_WHITE].players, teams[COLOR_BLACK].players, winner);
+
         playing = false;
         interruptPhase();
     }
 
-    private String createPGN() {
-        if (selectedMoves.size() % 2 == 1) selectedMoves.add("");
-        return IntStream.iterate(0, i -> i + 1).limit(selectedMoves.size() / 2)
-                .mapToObj(i -> (i + 1) + ". " + selectedMoves.get(i * 2) + " " + selectedMoves.get(i * 2 + 1))
-                .reduce((a, b) -> a + " " + b).orElse("");
+    private String createPGN(String result) {
+        String n = System.getProperty("line.separator");
+        StringBuffer pgn = new StringBuffer();
+        pgn.append(pgnTag("Site","molechess.com") + n);
+        pgn.append(pgnTag("Date", LocalDate.now().toString()) + n);
+        pgn.append(pgnTag("White",teams[COLOR_WHITE].toString(true)) + n);
+        pgn.append(pgnTag("Black",teams[COLOR_BLACK].toString(true)) + n);
+        pgn.append(pgnTag("Result",result) + n);
+
+        int t = 1;
+        for (MoveVotes votes : moveHistory) {
+            String pfx = (votes.color == COLOR_WHITE) ? t++ + "." : " ";
+            pgn.append(pfx + votes.selected.move.getSan() + " {" + votes.selected.player.user.name + "}");
+        }
+
+        return pgn.toString();
     }
 
-    ////new MolePlayer(MoleServ.DUMMIES[i++][color], this, color, nextGUIColor());
+    private String pgnTag(String type, String val) {
+        return "[" + type + " \"" + val + "\"]";
+    }
+
     private void aiFill(int color) {
         while (teams[color].players.size() < minPlayers) {
             int n = (int) Math.floor(Math.random() * MOLE_NAMES.size());
@@ -912,7 +940,7 @@ public class MoleGame implements Runnable {
         MolePlayer player = null;
         boolean selected = false;
 
-        if (MOLETEST) {
+        if (MoleServ.TEST.equalsIgnoreCase("moletest")) {
             player = getPlayer(creator);
             if (player != null) selected = (player.color == color);
             teams[color].voteCount = voteLimit;
@@ -927,6 +955,7 @@ public class MoleGame implements Runnable {
 
         for (MolePlayer p : teams[color].players) {
             p.user.tell("mole",p.role == MolePlayer.ROLE.MOLE ? "true" : "false", this);
+            teams[color].startPlayers.add(p);
         }
     }
 

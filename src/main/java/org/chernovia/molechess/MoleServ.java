@@ -46,6 +46,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     static final ObjectMapper OBJ_MAPPER = new ObjectMapper();
     static final Pattern ALPHANUMERIC_PATTERN = Pattern.compile("^[a-zA-Z0-9]*$");
     static final int MAX_STR_LEN = 30;
+    static String TEST = "";
     static String LOG_PATH = "%h/molechess/logs/";
     static String STOCK_PATH = "stockfish/stockfish";
     static int STOCK_STRENGTH = 2000, STOCK_MOLE_STRENGTH = 1500;
@@ -64,6 +65,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 
     public MoleServ(int port, String[] args) {
         CommandLineParser parser = new CommandLineParser(args);
+        String[] test = parser.getArgumentValue("test");
+        if (test != null) TEST = test[0];
         String[] path = parser.getArgumentValue("stockpath");
         if (path != null) STOCK_PATH = path[0];
         log("Stock Path: " + STOCK_PATH);
@@ -111,7 +114,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                         "CREATE TABLE IF NOT EXISTS `games` (" +
                                 "  `Id` BINARY(16) NOT NULL," +
                                 "  `Date` DATETIME NOT NULL," +
-                                "  `PGN` VARCHAR(300) NOT NULL," +
+                                "  `PGN` MEDIUMTEXT NOT NULL," +
                                 "  `Winner` INT NOT NULL," +
                                 "  PRIMARY KEY (`Id`)" +
                                 ")DEFAULT CHARSET = utf8;")
@@ -125,8 +128,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                                 "  `Rating` INT(11) NOT NULL," +
                                 "  `Mole` INT NOT NULL," +
                                 "  PRIMARY KEY (`Id`)," +
-                                "  INDEX `GameFK_idx` (`Game` ASC) VISIBLE," +
-                                "  INDEX `PlayerFK_idx` (`Player` ASC) VISIBLE," +
+                                "  INDEX `GameFK_idx` (`Game` ASC)," +
+                                "  INDEX `PlayerFK_idx` (`Player` ASC)," +
                                 "  CONSTRAINT `GameFK`" +
                                 "  FOREIGN KEY (`Game`)" +
                                 "  REFERENCES `games` (`Id`)" +
