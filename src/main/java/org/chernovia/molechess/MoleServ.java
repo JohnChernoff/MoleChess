@@ -442,8 +442,11 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                         game.handleVeto(user,confirm.asBoolean());
                     }
                 }
-            } else if (typeTxt.equals("opt")) {
+            } else if (typeTxt.equals("set_opt")) {
                 setGameOptions(user,dataNode);
+            } else if (typeTxt.equals("get_opt")) {
+                MoleGame game = games.get(dataTxt);
+                if (game != null) user.tell("options", game.getGameOptions());
             } else if (typeTxt.equals("top")) {
                 getTopPlayers(Integer.parseInt(dataTxt)).ifPresent(it -> user.tell("top", it));
             } else if (typeTxt.equals("chat")) {
@@ -518,7 +521,6 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 
         JsonNode hideMoveVote = data.get("hide_move_vote");
         if (hideMoveVote != null) game.setHideMoveVote(hideMoveVote.asBoolean());
-
     }
 
     private void broadcast(MoleGame game, ObjectNode node) {
