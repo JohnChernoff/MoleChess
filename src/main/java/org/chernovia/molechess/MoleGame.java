@@ -718,7 +718,7 @@ public class MoleGame implements Runnable {
         Move move;
         if (moves.size() == 0) {
             spam("No legal moves selected, picking randomly...");
-            move = pickMove(board.legalMoves()); move.setSan(getSan(move,turn)); return move;
+            move = pickMove(board.legalMoves()); move.setSan(getSan(move)); return move;
         } else {
             int n = (int) (Math.random() * moves.size());
             return moves.get(n);
@@ -994,7 +994,7 @@ public class MoleGame implements Runnable {
                 .reduce("", (acc, p) -> acc + p);
     }
 
-    private String getFrom(final Piece piece, final Square from, final Square to) {
+    private String getFromString(final Piece piece, final Square from, final Square to) {
         if (piece.getPieceType() == PieceType.PAWN || piece.getPieceType() == PieceType.NONE) {
             return "";
         }
@@ -1017,39 +1017,48 @@ public class MoleGame implements Runnable {
         }
     }
 
-    private String getSan(final Move move, final int color) {
-        return getSan(move,color,board);
+    public String getSan(final Move move) {
+        return getSan(move,board);
     }
 
-    private String getSan(final Move move, final int color, final Board sanBoard) {
+    /*
+     * Returns a SAN representation of given move
+     * @param move the move object
+     * @param sanBoard the board to make the move on
+     * @return San representation of the given move if the move is legal; null otherwise
+     */
+    private String getSan(final Move move, final Board sanBoard) {
         if (sanBoard.legalMoves().contains(move)) {
             final Board auxBoard = sanBoard.clone();
             auxBoard.doMove(move);
-            Piece piece = sanBoard.getPiece(move.getFrom());
+            Square from = move.getFrom(); Square to = move.getTo();
+            Piece piece = sanBoard.getPiece(from);
             final String ending = auxBoard.isMated() ? "#" : auxBoard.isKingAttacked() ? "+" : "";
-            if (piece.equals(Piece.BLACK_KING) && move.getFrom().equals(Square.E8)) {
-                if (move.getTo().equals(Square.G8)) {
+            if (piece.equals(Piece.BLACK_KING) && from.equals(Square.E8)) {
+                if (to.equals(Square.G8)) {
                     return "0-0" + ending;
-                } else if (move.getTo().equals(Square.C8)) {
+                } else if (to.equals(Square.C8)) {
                     return "0-0-0" + ending;
                 }
-            } else if (piece.equals(Piece.WHITE_KING) && move.getFrom().equals(Square.E1)) {
-                if (move.getTo().equals(Square.G1)) {
+            } else if (piece.equals(Piece.WHITE_KING) && from.equals(Square.E1)) {
+                if (to.equals(Square.G1)) {
                     return "0-0" + ending;
-                } else if (move.getTo().equals(Square.C1)) {
+                } else if (to.equals(Square.C1)) {
                     return "0-0-0" + ending;
                 }
             }
-            final String takes = (sanBoard.getPiece(move.getTo()).getPieceSide() == null ||
-                    sanBoard.getPiece(move.getTo()).getPieceSide().ordinal() != color) ? "" : "x";
+
+            Piece target = sanBoard.getPiece(move.getTo());
+            final String takes = (target != Piece.NONE ||
+                    (piece.getPieceType() == PieceType.PAWN && !from.getFile().equals(to.getFile()))) ? "x" : "";
             final String promotion = move.getPromotion() != Piece.NONE ? "=" + move.getPromotion().getSanSymbol() : "";
-            final String from = getFrom(piece, move.getFrom(), move.getTo()).toLowerCase();
-            final String to = move.getTo().value().toLowerCase();
-            final String sanSymbol = (piece.getSanSymbol().equals("") && takes.equals("x") && from.equals("")) ?
-                    move.getFrom().value().substring(0, 1).toLowerCase() : piece.getSanSymbol();
-            return sanSymbol + from + takes + to + promotion + ending;
+            final String fromStr = getFromString(piece,from,to).toLowerCase();
+            final String toStr = to.value().toLowerCase();
+            final String sanSymbol = (piece.getSanSymbol().equals("") && takes.equals("x") && fromStr.equals("")) ?
+                    from.value().substring(0, 1).toLowerCase() : piece.getSanSymbol();
+            return sanSymbol + fromStr + takes + toStr + promotion + ending;
         }
-        return "?";
+        return null;
     }
 
     private String getTurnPrefix() {
@@ -1058,7 +1067,7 @@ public class MoleGame implements Runnable {
     }
 
     private boolean addMoveVote(final MolePlayer player, final Move move) { //log("Adding: " + move + " -> " + move.getPromotion());
-        final String san = getSan(move, player.color); if (san.equals("")) return false;
+        final String san = getSan(move); if (san == null) return false;
         move.setSan(san);
         player.move = move;
         if (countMoveVotes(player.color) >= activePlayers(turn, true)) interruptPhase();
@@ -1066,7 +1075,7 @@ public class MoleGame implements Runnable {
     }
 
     private boolean addMovePrediction(final MolePlayer player, final Move move) {
-        final String san = getSan(move, player.color); if (san.equals("")) return false;
+        final String san = getSan(move); if (san == null) return false;
         move.setSan(san);
         player.prediction = move;
         return true;
