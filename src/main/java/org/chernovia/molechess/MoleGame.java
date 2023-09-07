@@ -398,6 +398,7 @@ public class MoleGame implements Runnable {
                 if (BUCKETS) playerBucket.remove(player); else teams[player.color].players.remove(player);
             } else {
                 player.away = true;
+                if (phase == GAME_PHASE.POSTGAME && user.equals(creator)) interruptPhase();
             }
             user.tell("part",toJSON(false)); //update(player.user,new MoleResult("Leaving: " + title));
             update(new MoleResult(user.name + " leaves"));
@@ -646,6 +647,8 @@ public class MoleGame implements Runnable {
             update(user, new MoleResult(false, "Wrong turn: " + colorString(turn)));
         } else if (player.role != MolePlayer.ROLE.MOLE) {
             update(user, new MoleResult(false, "You're not a Mole!"));
+        } else if (player.isRampaging()) {
+            update(user, new MoleResult(false, "You're rampaging!"));
         } else {
             veto = confirm;
             interruptPhase();
@@ -755,8 +758,10 @@ public class MoleGame implements Runnable {
     private ArrayList<MoveVote> getMoves(MolePlayer player) {
         ArrayList<MoveVote> moveList = new ArrayList<>();
         for (MoveVotes moves : getMoves(player.color)) {
-            if (moves.selected.player.equals(player)) moveList.add(moves.selected);
-            for (MoveVote move : moves.alts) if (move.player.equals(player)) moveList.add(move);
+            if (moves.selected.player != null) { //TODO: figure out why this happens
+                if (moves.selected.player.equals(player)) moveList.add(moves.selected);
+                for (MoveVote move : moves.alts) if (move.player.equals(player)) moveList.add(move);
+            }
         }
         return moveList;
     }
@@ -877,7 +882,6 @@ public class MoleGame implements Runnable {
         return !playing;
     }
 
-    //handle aborts
     public void endGame(int winner, String reason) {
         String result;
         if (winner != COLOR_UNKNOWN) {
@@ -890,7 +894,9 @@ public class MoleGame implements Runnable {
             if (reason.equals("deserted")) result = "aborted"; else result = "1/2-1/2";
         }
 
-        listener.saveGame(createPGN(result), teams[COLOR_WHITE].players, teams[COLOR_BLACK].players, winner);
+        if (phase != GAME_PHASE.PREGAME) {
+            listener.saveGame(createPGN(result), teams[COLOR_WHITE].players, teams[COLOR_BLACK].players, winner);
+        }
 
         playing = false;
         interruptPhase();
@@ -1238,6 +1244,10 @@ public class MoleGame implements Runnable {
         return options;
     }
 
+    public void tellRole(MoleUser user) {
+        MolePlayer p = getPlayer(user);
+        if (p != null) user.tell("Your role: " + p.role); else user.tell("You're not in this game!");
+    }
     private static void log(String msg) {
         MoleServ.log(msg);
     }

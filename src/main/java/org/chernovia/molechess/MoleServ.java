@@ -36,6 +36,8 @@ ai voting
 ?innocent accused remain
 ?molevote bug
 ?Defecting Mole rating change bug
+
+sustain connections
 */
 
 public class MoleServ extends Thread implements ConnListener, MoleListener {
@@ -346,6 +348,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 return;
             }
             String typeTxt = typeNode.asText(), dataTxt = dataNode.asText();
+
             if (typeTxt.equals("login")) {
                 handleLogin(conn, dataTxt, testing);
             } else if (typeTxt.equals("obs")) {
@@ -354,102 +357,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 conn.tell(ZugServ.MSG_ERR, "Please log in");
             } else if (typeTxt.equals("newgame")) {
                 JsonNode color = dataNode.get("color");
-                JsonNode title = dataNode.get("title");
+                JsonNode title = dataNode.get("game");
                 if (color != null && title != null) newGame(user,title.asText(),color.asInt());
                 else user.tell(ZugServ.MSG_ERR, "Ruhoh: Invalid Data!");
-            } else if (typeTxt.equals("obsgame")) {
-                MoleGame game = games.get(dataTxt);
-                if (game == null) {
-                    user.tell(ZugServ.MSG_ERR, "Game does not exist");
-                } else {
-                    game.addObserver(user);
-                }
-            } else if (typeTxt.equals("joingame")) {
-                String title = dataNode.get("title").asText();
-                int color = dataNode.get("color").asInt();
-                MoleGame game = games.get(title);
-                if (game == null) {
-                    user.tell(ZugServ.MSG_ERR, "Game does not exist");
-                } else {
-                    game.addPlayer(user, color);
-                }
-            } else if (typeTxt.equals("partgame")) {
-                MoleGame game = games.get(dataTxt);
-                if (game == null) {
-                    user.tell(ZugServ.MSG_ERR, "Game not joined: " + dataTxt);
-                } else {
-                    game.dropPlayer(user);
-                }
-            } else if (typeTxt.equals("startgame")) {
-                MoleGame game = games.get(dataTxt);
-                if (game == null) {
-                    user.tell(ZugServ.MSG_ERR, "You're not in a game");
-                } else {
-                    game.startGame(user);
-                }
-            } else if (typeTxt.equals("move")) {
-                JsonNode title = dataNode.get("board");
-                JsonNode move = dataNode.get("move");
-                JsonNode prom = dataNode.get("promotion");
-                if (title != null && move != null) {
-                    MoleGame game = games.get(title.asText());
-                    if (game == null) { //unlikely but possible?
-                        user.tell(ZugServ.MSG_ERR, "Game not found: " + title);
-                    } else {
-                        game.handleMoveVote(user, move.asText() + (prom.isNull() ? "" : prom.asText()));
-                    }
-                } else {
-                    user.tell(ZugServ.MSG_ERR, "WTF: " + dataTxt);
-                }
-            } else if (typeTxt.equals("voteoff")) {
-                JsonNode title = dataNode.get("board");
-                JsonNode suspect = dataNode.get("player");
-                if (title != null && suspect != null) {
-                    MoleGame game = games.get(title.asText());
-                    if (game == null) {
-                        user.tell(ZugServ.MSG_ERR, "Game not found: " + title);
-                    } else {
-                        game.castMoleVote(user, suspect.asText());
-                    }
-                } else {
-                    user.tell(ZugServ.MSG_ERR, "WTF: " + dataTxt);
-                }
-            } else if (typeTxt.equals("kickoff")) {
-                JsonNode title = dataNode.get("board");
-                JsonNode suspect = dataNode.get("player");
-                if (title != null && suspect != null) {
-                    MoleGame game = games.get(title.asText());
-                    if (game == null) {
-                        user.tell(ZugServ.MSG_ERR, "Game not found: " + title);
-                    } else {
-                        game.kickPlayer(user, suspect.asText());
-                    }
-                } else {
-                    user.tell(ZugServ.MSG_ERR, "WTF: " + dataTxt);
-                }
-            } else if (typeTxt.equals("resign")) {
-                MoleGame game = games.get(dataTxt);
-                if (game == null) {
-                    user.tell(ZugServ.MSG_ERR, "Game not found: " + dataTxt);
-                } else {
-                    game.resign(user);
-                }
-            } else if (typeTxt.equals("veto")) {
-                JsonNode title = dataNode.get("game");
-                JsonNode confirm = dataNode.get("confirm");
-                if (title != null && confirm != null) {
-                    MoleGame game = games.get(title.asText());
-                    if (game == null) {
-                        user.tell(ZugServ.MSG_ERR, "Game not found: " + dataTxt);
-                    } else {
-                        game.handleVeto(user,confirm.asBoolean());
-                    }
-                }
-            } else if (typeTxt.equals("set_opt")) {
-                setGameOptions(user,dataNode);
-            } else if (typeTxt.equals("get_opt")) {
-                MoleGame game = games.get(dataTxt);
-                if (game != null) user.tell("options", game.getGameOptions());
             } else if (typeTxt.equals("top")) {
                 getTopPlayers(Integer.parseInt(dataTxt)).ifPresent(it -> user.tell("top", it));
             } else if (typeTxt.equals("chat")) {
@@ -476,17 +386,19 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 } else {
                     user.tell(ZugServ.MSG_ERR, "Bad chat");
                 }
-            } else if (typeTxt.equals("update")) {
-                MoleGame game = games.get(dataTxt);
-                if (game != null) user.tell(MSG_GAME_UPDATE, game.toJSON(true));
-            } else if (typeTxt.equals("status")) {
-                MoleGame game = games.get(dataTxt);
-                if (game != null) user.tell("status",game.getStatus());
-                else user.tell("status","null");
             } else if (typeTxt.equals("cmd")) {
                 handleCmd(user, dataNode);
-            } else {
-                user.tell(ZugServ.MSG_ERR, "Unknown command");
+            } else { //must be a game command
+                MoleGame game = games.get(dataTxt); //TODO: simplify
+                if (game == null) {
+                    JsonNode gameNode = dataNode.get("game");
+                    if (gameNode != null) game = games.get(gameNode.asText());
+                }
+                if (game != null) {
+                    handleGameCmd(user,typeTxt,game,dataNode);
+                } else {
+                    user.tell(ZugServ.MSG_ERR, "Unknown command: " + typeTxt);
+                }
             }
         } catch (JsonMappingException e) {
             log("JSON Mapping goof: " + e.getMessage());
@@ -497,11 +409,62 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         }
     }
 
-    private void setGameOptions(MoleUser user, JsonNode data) {
-        JsonNode gameNode = data.get("game");
-        if (gameNode == null) return;
-        MoleGame game = games.get(gameNode.asText());
-        if (game == null) return;
+    private boolean handleGameCmd(MoleUser user, String cmd, MoleGame game, JsonNode data) {
+        if (cmd.equalsIgnoreCase("role")) {
+            game.tellRole(user);
+        }
+        else if (cmd.equalsIgnoreCase("status")) {
+            user.tell("status",game.getStatus());
+        }
+        else if (cmd.equalsIgnoreCase("veto")) {
+            JsonNode confirm = data.get("confirm");
+            game.handleVeto(user, confirm == null || confirm.asBoolean());
+        }
+        else if (cmd.equalsIgnoreCase("resign")) {
+            game.resign(user);
+        }
+        else if (cmd.equalsIgnoreCase("kickoff")) {
+            JsonNode suspect = data.get("player");
+            if (suspect != null) game.kickPlayer(user, suspect.asText());
+        }
+        else if (cmd.equalsIgnoreCase("voteoff")) {
+            JsonNode suspect = data.get("player");
+            if (suspect != null) game.castMoleVote(user, suspect.asText());
+        }
+        else if (cmd.equalsIgnoreCase("move")) {
+            JsonNode move = data.get("move");
+            JsonNode prom = data.get("promotion");
+            if (move != null) game.handleMoveVote(user, move.asText() + (prom.isNull() ? "" : prom.asText()));
+        }
+        else if (cmd.equalsIgnoreCase("startgame")) {
+            game.startGame(user);
+        }
+        else if (cmd.equalsIgnoreCase("partgame")) {
+            game.dropPlayer(user);
+        }
+        else if (cmd.equalsIgnoreCase("joingame")) {
+            JsonNode color = data.get("color");
+            game.addPlayer(user,color.isNull() ? MoleGame.COLOR_UNKNOWN : color.asInt());
+        }
+        else if (cmd.equalsIgnoreCase("obsgame")) {
+            game.addObserver(user);
+        }
+        else if (cmd.equalsIgnoreCase("set_opt")) {
+            setGameOptions(user,game,data);
+        }
+        else if (cmd.equalsIgnoreCase("get_opt")) {
+            user.tell("options", game.getGameOptions());
+        }
+        else if (cmd.equalsIgnoreCase("update")) {
+            user.tell(MSG_GAME_UPDATE, game.toJSON(true));
+        }
+        else {
+            user.tell("Unknown game command: " + cmd); return false;
+        }
+        return true;
+    }
+
+    private void setGameOptions(MoleUser user, MoleGame game, JsonNode data) {
         if (!game.getCreator().equals(user)) return;
 
         JsonNode time = data.get("time");
@@ -552,6 +515,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             try {
                 Thread.sleep(seconds * 1000);
                 serv.stopSrv();
+                Thread.sleep(2000); //give the sockets a chance to clear?
                 System.exit(-1);
             }
             catch (InterruptedException e) {
