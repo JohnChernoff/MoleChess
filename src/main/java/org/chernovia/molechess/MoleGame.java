@@ -138,7 +138,7 @@ public class MoleGame implements Runnable {
     }
 
     private Logger gameLog;
-    private FileHandler fileHandler;
+    private FileHandler logfileHandler;
     public static List<String> MOLE_NAMES = MoleServ.loadRandomNames("molenames.txt");
     public static final Pattern VALID_MOVE_PATTERN = Pattern.compile("[a-h][1-8][a-h][1-8][qQrRbBnN]?");
     public static final int COLOR_UNKNOWN = -1, COLOR_BLACK = 0, COLOR_WHITE = 1;
@@ -186,8 +186,8 @@ public class MoleGame implements Runnable {
         gameLog = Logger.getLogger(t);
         try {
             gameLog.setUseParentHandlers(false);
-            fileHandler = new FileHandler(MoleServ.LOG_PATH + t + System.currentTimeMillis() + ".log");
-            gameLog.addHandler(fileHandler);
+            logfileHandler = new FileHandler(MoleServ.LOG_PATH + t + System.currentTimeMillis() + ".log");
+            gameLog.addHandler(logfileHandler);
             gameLog.log(Level.INFO,"Game Created");
         } catch (IOException e) {
             System.err.println(e.getMessage());
@@ -912,7 +912,10 @@ public class MoleGame implements Runnable {
 
     public void endGame(int winner, String reason) {
         String result;
-        if (winner != COLOR_UNKNOWN) {
+        if (!playing && !closing) {
+            spam("WTF: game already finished"); return;
+        }
+        else if (winner != COLOR_UNKNOWN) {
             spam(colorString(winner) + " wins by " + reason + "!"); //award(winner,winBonus);
             listener.updateUserData(teams[winner].players, teams[getNextTurn(winner)].players, false);
             result = (winner == COLOR_WHITE) ? "1-0" : "0-1";
@@ -938,15 +941,24 @@ public class MoleGame implements Runnable {
         pgn.append(pgnTag("White",teams[COLOR_WHITE].toString(true)) + n);
         pgn.append(pgnTag("Black",teams[COLOR_BLACK].toString(true)) + n);
         pgn.append(pgnTag("Result",result) + n);
-
         int t = 1;
         for (MoveVotes votes : moveHistory) {
             String pfx = (votes.color == COLOR_WHITE) ? t++ + "." : " ";
             pgn.append(pfx + votes.selected.move.getSan() +
-            " {" + (votes.selected.player == null ? "?" : votes.selected.player.user.name) + "}");
+            " {" + (votes.selected.player == null ? "?" : votes.selected.player.user.name) +
+            getPgnMoveArrows(votes) + "} ");
+            for (MoveVote alt : votes.alts) {
+                if (alt.player != null) pgn.append("( " + alt.move + " {" + alt.player.user.name + "} )");
+            }
         }
-
         return pgn.toString();
+    }
+
+    private String getPgnMoveArrows(MoveVotes votes) {
+        StringBuffer buff = new StringBuffer("[%cal ");
+        for (MoveVote alt : votes.alts) buff.append("R" + alt.move + ",");
+        buff.append("G" + votes.selected.move + "]");
+        return buff.toString();
     }
 
     private String pgnTag(String type, String val) {

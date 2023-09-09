@@ -23,6 +23,9 @@ public class SanTest {
         System.out.println(game.getSan(new Move(Square.D2,Square.D4)));
         game = new MoleGame(new MoleUser(null,"","User",1800), "TestGame", TEST_FEN1, null);
         System.out.println(game.getSan(new Move(Square.G1,Square.F3)));
+
+        Move move = new Move(Square.E2,Square.E5);
+        System.out.println(move);
     }
 
 }

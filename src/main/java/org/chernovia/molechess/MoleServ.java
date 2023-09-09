@@ -125,7 +125,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                         "CREATE TABLE IF NOT EXISTS `teams` (" +
                                 "  `Id` INT NOT NULL AUTO_INCREMENT," +
                                 "  `Game` BINARY(16) NOT NULL," +
-                                "  `Player` VARCHAR(45) NOT NULL," +
+                                "  `Player` VARCHAR(30) NOT NULL," +
                                 "  `Color` INT NOT NULL," +
                                 "  `Rating` INT(11) NOT NULL," +
                                 "  `Mole` INT NOT NULL," +
