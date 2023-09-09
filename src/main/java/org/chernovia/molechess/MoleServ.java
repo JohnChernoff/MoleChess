@@ -446,6 +446,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             JsonNode color = data.get("color");
             game.addPlayer(user,color.isNull() ? MoleGame.COLOR_UNKNOWN : color.asInt());
         }
+        else if (cmd.equalsIgnoreCase("abort")) {
+            game.abortGame(user);
+        }
         else if (cmd.equalsIgnoreCase("obsgame")) {
             game.addObserver(user);
         }

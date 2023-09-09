@@ -8,14 +8,12 @@ import com.github.bhlangonijr.chesslib.move.Move;
 
 import java.awt.*;
 import java.io.IOException;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.logging.*;
 
 public class MoleGame implements Runnable {
@@ -157,9 +155,9 @@ public class MoleGame implements Runnable {
     private final MoleListener listener;
     private final MoleUser creator;
     private final String title;
-    private boolean playing;
+    private boolean playing, closing;
     private long lastActivity;
-    private int minPlayers = 3, maxPlayers = 6, kickFlag = 2;
+    private int minPlayers = 3, maxPlayers = 6, kickFlag = 2, abortMoveLimit = 4;
     private int turn;
     private int moveTime = 60, vetoTime = 8, postTime = 300, preTime = 999, newTime = 0;
     private long phaseStamp = 0;
@@ -197,7 +195,7 @@ public class MoleGame implements Runnable {
         }
         creator = c;
         title = t;
-        playing = false;
+        playing = false; closing = false;
         listener = l;
         teams[COLOR_BLACK] = new MoleTeam(); teams[COLOR_WHITE] = new MoleTeam();
         moveHistory = new ArrayList<>();
@@ -456,6 +454,24 @@ public class MoleGame implements Runnable {
         }
     }
 
+    public void abortGame(MoleUser user) {
+        if (!creator.equals(user)) {
+            update(new MoleResult(false,"You're not the creator of this game",user));
+        }
+        else if (phase == GAME_PHASE.VOTING && moveNum >= abortMoveLimit) { //VETO?
+            update(new MoleResult(false,"You can only abort running games before move " + abortMoveLimit,user));
+        }
+        else {
+            spam("Game aborted by creator: " + user.name);
+            closeGame();
+        }
+    }
+
+    public void closeGame() {
+        closing = true; interruptPhase();
+        listener.finished(this);
+    }
+
     public void startGame(MoleUser user) {
         if (phase != GAME_PHASE.PREGAME) {
             update(user, new MoleResult(false, "Game already begun"));
@@ -574,12 +590,22 @@ public class MoleGame implements Runnable {
                     } else if (player.votedOff) {
                         update(player.user, new MoleResult(false, "Sorry, you've been voted off"));
                     } else if (addMoveVote(player, move)) {
+                        if (hideMoveVote) confirmMove(player,moveStr,move.getSan());
                         updateMoveVotes();
                     } else {
                         update(player.user, new MoleResult(false, "Bad Move: " + moveStr));
                     }
                 }, () -> update(player.user, new MoleResult(false, "Bad Move: " + moveStr))
         );
+    }
+
+    private void confirmMove(MolePlayer player, String moveStr, String san) {
+        ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+        node.put("player",player.toJSON());
+        node.put("move",moveStr);
+        node.put("san",san);
+        node.put("game",this.toJSON(false));
+        player.user.tell("move_conf",node);
     }
 
     private void updateMoveVotes() {
@@ -626,8 +652,9 @@ public class MoleGame implements Runnable {
         MolePlayer player = getPlayer(user);
         if (player == null) {
             update(user, new MoleResult(false, "Player not found: " + user.name));
-        } else if (phase != GAME_PHASE.VOTING) {
-            update(user, new MoleResult(false, "Bad phase: " + phase));
+        } else if ((phase == GAME_PHASE.PREGAME || phase == GAME_PHASE.POSTGAME) || moveNum < abortMoveLimit) {
+            if (getCreator().equals(user)) abortGame(user);
+            else update(user, new MoleResult(false, "Bad phase: " + phase));
         } else if (player.color != turn) {
             update(user, new MoleResult(false, "Wrong turn: " + colorString(turn)));
         } else {
@@ -665,12 +692,12 @@ public class MoleGame implements Runnable {
         setMole(COLOR_BLACK);
         setMole(COLOR_WHITE);
         listener.started(this);  //starting position
-        while (playing) {
+        while (playing && !closing) {
             spam("Turn #" + moveNum + ": " + colorString(turn));
             updateMoveVotes();
             autoPlay(turn); //boolean timeout =
             newPhase(GAME_PHASE.VOTING, moveTime);
-            if (playing) {
+            if (playing && !closing) {
                 ArrayList<Move> moveList = getMoveVotes(turn);
                 Move move = pickMove(moveList);
 
@@ -681,7 +708,7 @@ public class MoleGame implements Runnable {
                     spam("The enemy mole may veto the following move: " + move.getSan());
                     counterMole.user.tell("veto",title);
                     veto = false;
-                    newPhase(GAME_PHASE.VETO,vetoTime);
+                    newPhase(GAME_PHASE.VETO,vetoTime); //TODO: test for closing?
                     if (veto) {
                         spam("Move vetoed!");
                         moveList.remove(move);
@@ -698,6 +725,7 @@ public class MoleGame implements Runnable {
                     node.put("move",move.getSan()); node.set("game",this.toJSON(false));
                     spamNode("move",node);
                     selectedMoves.add(move.getSan());
+                    endgameCheck();
                     if (playing) {
                         MolePlayer predictor = testPrediction(mole,counterMole);
                         if (predictor != null) {
@@ -713,8 +741,8 @@ public class MoleGame implements Runnable {
 
             }
         }
-        if (!isDeserted()) newPhase(GAME_PHASE.POSTGAME, postTime);
-        listener.finished(this);
+        if (!closing && !isDeserted()) newPhase(GAME_PHASE.POSTGAME, postTime);
+        closeGame();
     }
 
     private Move pickMove(List<Move> moves) {
@@ -914,7 +942,8 @@ public class MoleGame implements Runnable {
         int t = 1;
         for (MoveVotes votes : moveHistory) {
             String pfx = (votes.color == COLOR_WHITE) ? t++ + "." : " ";
-            pgn.append(pfx + votes.selected.move.getSan() + " {" + votes.selected.player.user.name + "}");
+            pgn.append(pfx + votes.selected.move.getSan() +
+            " {" + (votes.selected.player == null ? "?" : votes.selected.player.user.name) + "}");
         }
 
         return pgn.toString();
@@ -1142,7 +1171,6 @@ public class MoleGame implements Runnable {
     private MoleResult makeMove(Move move) {
         if (board.doMove(move)) {
             gameLog.log(Level.INFO,"New Move: " + getTurnPrefix() + move);
-            endgameCheck();
             return new MoleResult("Move: " + move);
         } else return new MoleResult(false, "Invalid Move: " + move); //shouldn't occur
     }
