@@ -161,6 +161,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 .reduce((a, b) -> a + ", " + b)
                 .ifPresent(teamValues -> {
                     final String teamQuery = "INSERT INTO `teams` (`Game`, `Player`, `Color`, `Rating`, `Mole`) VALUES " + teamValues;
+                    System.out.println("Saving Team: " + teamQuery);
                     moleBase.makeQuery(teamQuery).ifPresent(query -> query.runUpdate(statement -> {
                         int i = 1;
                         for (MolePlayer player : allPlayers) {
@@ -245,6 +246,23 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                         ObjectNode node = OBJ_MAPPER.createObjectNode();
                         node.put("name", rs.getString("Name"));
                         node.put("rating", rs.getInt("Rating"));
+                        playlist.add(node);
+                    }
+                    return Optional.of(playlist);
+                })
+        );
+    }
+
+    private Optional<ArrayNode> getPlayerHistory(String name, int n) {
+        return moleBase.makeQuery("SELECT * FROM games INNER JOIN teams ON games.Id = teams.Game INNER JOIN " +
+                "players ON players.name = ? ORDER BY games.Date DESC LIMIT ?").flatMap(query ->
+                query.mapResultSet(statement -> {
+                    statement.setString(1, name); statement.setInt(2, n);
+                }, rs -> {
+                    ArrayNode playlist = OBJ_MAPPER.createArrayNode();
+                    while (rs.next()) {
+                        ObjectNode node = OBJ_MAPPER.createObjectNode();
+                        node.put("pgn", rs.getString("PGN"));
                         playlist.add(node);
                     }
                     return Optional.of(playlist);
@@ -362,6 +380,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 else user.tell(ZugServ.MSG_ERR, "Ruhoh: Invalid Data!");
             } else if (typeTxt.equals("top")) {
                 getTopPlayers(Integer.parseInt(dataTxt)).ifPresent(it -> user.tell("top", it));
+            } else if (typeTxt.equals("history")) {
+                getPlayerHistory(user.name, Integer.parseInt(dataTxt)).ifPresent(it -> user.tell("history", it));
             } else if (typeTxt.equals("chat")) {
                 JsonNode sourceNode = dataNode.get("source");
                 if (sourceNode != null) { // && dataNode != null
