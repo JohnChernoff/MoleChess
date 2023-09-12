@@ -6,7 +6,9 @@ import org.chernovia.lib.zugserv.Connection;
 import org.chernovia.lib.zugserv.ZugServ;
 
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 public class MoleUser {
     String oauth;
@@ -15,6 +17,7 @@ public class MoleUser {
     private Connection conn;
     public MoleData data;
     private ArrayList<Connection> observers = new ArrayList<>();
+    Deque<Long> messageStack = new ConcurrentLinkedDeque<>();
 
     public class MoleData {
         String about;
@@ -117,5 +120,16 @@ public class MoleUser {
         if (o == this) return true;
         if (!(o instanceof MoleUser)) return false;
         return ((MoleUser) o).oauth.equals(this.oauth);
+    }
+
+    public boolean newMessage(int max, long millis) {
+        long currentTime = System.currentTimeMillis(); int n = 0; long t = currentTime - millis;
+        for (long msg : messageStack) {
+            if (msg > t) n++;
+            else messageStack.remove(msg);
+        }
+        if (n > max) return false;
+        messageStack.add(currentTime);
+        return true;
     }
 }

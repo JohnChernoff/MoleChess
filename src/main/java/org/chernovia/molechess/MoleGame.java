@@ -398,8 +398,8 @@ public class MoleGame implements Runnable {
                 player.away = true;
                 if (phase == GAME_PHASE.POSTGAME && user.equals(creator)) interruptPhase();
             }
-            user.tell("part",toJSON(false)); //update(player.user,new MoleResult("Leaving: " + title));
             update(new MoleResult(user.name + " leaves"));
+            user.tell("part",toJSON(false)); //update(player.user,new MoleResult("Leaving: " + title));
             if (isDeserted()) {
                 switch (phase) {
                     case PREGAME -> listener.finished(this);
@@ -655,8 +655,11 @@ public class MoleGame implements Runnable {
         } else if ((phase == GAME_PHASE.PREGAME || phase == GAME_PHASE.POSTGAME) || moveNum < abortMoveLimit) {
             if (getCreator().equals(user)) abortGame(user);
             else update(user, new MoleResult(false, "Bad phase: " + phase));
-        } else if (player.color != turn) {
-            update(user, new MoleResult(false, "Wrong turn: " + colorString(turn)));
+        } //else if (player.color != turn) {
+            //update(user, new MoleResult(false, "Wrong turn: " + colorString(turn))); //TODO: is this necessary?
+        //}
+        else if (player.resigning) {
+            update(user, new MoleResult(false, "You've already resigned!"));
         } else {
             player.resigning = true;
             update(new MoleResult(player.user.name + " resigns"));
@@ -927,6 +930,12 @@ public class MoleGame implements Runnable {
 
         if (phase != GAME_PHASE.PREGAME) {
             listener.saveGame(createPGN(result), teams[COLOR_WHITE].players, teams[COLOR_BLACK].players, winner);
+            for (MolePlayer player : teams[COLOR_WHITE].startPlayers) {
+                if (player.role == MolePlayer.ROLE.MOLE) spam("White Mole: " + player.user.name);
+            }
+            for (MolePlayer player : teams[COLOR_BLACK].startPlayers) {
+                if (player.role == MolePlayer.ROLE.MOLE) spam("Black Mole: " + player.user.name);
+            }
         }
 
         playing = false;
