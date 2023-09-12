@@ -25,19 +25,19 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /* TODO:
-~handle AWOL team members
 handle draws
 clarify observing, empty/pregame board timeouts
 Double Mole/Inspector/Takebacker/Captain Role?
 ai voting
 50 move rule draws
 
+~handle AWOL team members
 ?update player leaving
 ?innocent accused remain
 ?molevote bug
 ?Defecting Mole rating change bug
+?!sustain connections
 
-sustain connections
 */
 
 public class MoleServ extends Thread implements ConnListener, MoleListener {
@@ -254,9 +254,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     }
 
     private Optional<ArrayNode> getPlayerHistory(String name, int n) {
-        return moleBase.makeQuery("SELECT * FROM games INNER JOIN teams ON games.Id = teams.Game INNER JOIN " +
-                "players ON players.name = ? ORDER BY games.Date DESC LIMIT ?").flatMap(query ->
-                query.mapResultSet(statement -> {
+        return moleBase.makeQuery("SELECT DISTINCT games.PGN FROM games INNER JOIN teams ON " +
+               "games.Id = teams.Game INNER JOIN players ON players.Name = teams.Player WHERE " +
+               "players.Name = ? ORDER BY games.Date DESC LIMIT ?").
+                flatMap(query -> query.mapResultSet(statement -> {
                     statement.setString(1, name); statement.setInt(2, n);
                 }, rs -> {
                     ArrayNode playlist = OBJ_MAPPER.createArrayNode();
@@ -367,12 +368,16 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             }
             String typeTxt = typeNode.asText(), dataTxt = dataNode.asText();
 
-            if (typeTxt.equals("login")) {
+            if (typeTxt.equals("pong")) {
+                user.tell("conn_stat",conn.getStatus().name());
+            } else if (typeTxt.equals("login")) {
                 handleLogin(conn, dataTxt, testing);
             } else if (typeTxt.equals("obs")) {
                 handleObs(conn,dataTxt);
             } else if (user == null) {
                 conn.tell(ZugServ.MSG_ERR, "Please log in");
+            } else if (!user.newMessage(5,10000)) {
+                user.tell("spam","Message not sent (spam)");
             } else if (typeTxt.equals("newgame")) {
                 JsonNode color = dataNode.get("color");
                 JsonNode title = dataNode.get("game");
@@ -397,10 +402,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                         MoleGame g = games.get(source);
                         if (g  != null) {
                             MolePlayer p = g.getPlayer(user);
-                            if (p != null) {
-                                if (p.newMessage(5,10000)) g.spam("chat",dataNode.get("msg").asText("?"),p);
-                                else user.tell("Sorry, you're typing too fast!",g);
-                            }
+                            if (p != null) g.spam("chat",dataNode.get("msg").asText("?"),p);
                         }
                     }
                 } else {
@@ -714,17 +716,13 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         log("Starting main MoleServ loop");
         running = true;
         while (running) {
-            boolean purged = false;
             try {
                 Thread.sleep(purgeFreq * 1000L);
                 for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
                     MoleGame game = entry.getValue();
-                    if (game.isDefunct(9999999)) {
-                        games.remove(entry.getKey());
-                        purged = true;
-                    }
+                    if (game.isDefunct(9999999)) game.closeGame();
+                    for (MoleUser user : users) user.tell("ping","ping");
                 }
-                if (purged) updateGames(false);
             } catch (InterruptedException e) {
                 running = false;
             }
