@@ -952,12 +952,12 @@ public class MoleGame implements Runnable {
         pgn.append(pgnTag("Result",result) + n);
         int t = 1;
         for (MoveVotes votes : moveHistory) {
-            String pfx = (votes.color == COLOR_WHITE) ? t++ + "." : " ";
+            String pfx = (votes.color == COLOR_WHITE) ? t++ + "." : t + "...";
             pgn.append(pfx + votes.selected.move.getSan() +
             " {" + (votes.selected.player == null ? "?" : votes.selected.player.user.name) +
             getPgnMoveArrows(votes) + "} ");
             for (MoveVote alt : votes.alts) {
-                if (alt.player != null) pgn.append("( " + alt.move + " {" + alt.player.user.name + "} )");
+                if (alt.player != null) pgn.append("( " + alt.move.getSan() + " {" + alt.player.user.name + "} )");
             }
         }
         return pgn.toString();
@@ -965,9 +965,13 @@ public class MoleGame implements Runnable {
 
     private String getPgnMoveArrows(MoveVotes votes) {
         StringBuffer buff = new StringBuffer("[%cal ");
-        for (MoveVote alt : votes.alts) buff.append("R" + alt.move + ",");
-        buff.append("G" + votes.selected.move + "]");
+        for (MoveVote alt : votes.alts) buff.append("R" + getMoveArrowString(alt.move) + ",");
+        buff.append("G" + getMoveArrowString(votes.selected.move) + "]");
         return buff.toString();
+    }
+
+    private String getMoveArrowString(Move move) { //ignores promotion
+        return move.getFrom().toString().toLowerCase() + move.getTo().toString().toLowerCase();
     }
 
     private String pgnTag(String type, String val) {
@@ -1092,15 +1096,15 @@ public class MoleGame implements Runnable {
             final String ending = auxBoard.isMated() ? "#" : auxBoard.isKingAttacked() ? "+" : "";
             if (piece.equals(Piece.BLACK_KING) && from.equals(Square.E8)) {
                 if (to.equals(Square.G8)) {
-                    return "0-0" + ending;
+                    return "O-O" + ending;
                 } else if (to.equals(Square.C8)) {
-                    return "0-0-0" + ending;
+                    return "O-O-O" + ending;
                 }
             } else if (piece.equals(Piece.WHITE_KING) && from.equals(Square.E1)) {
                 if (to.equals(Square.G1)) {
-                    return "0-0" + ending;
+                    return "O-O" + ending;
                 } else if (to.equals(Square.C1)) {
-                    return "0-0-0" + ending;
+                    return "O-O-O" + ending;
                 }
             }
 
