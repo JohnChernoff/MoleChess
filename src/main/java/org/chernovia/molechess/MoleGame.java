@@ -166,7 +166,7 @@ public class MoleGame implements Runnable {
     private Thread gameThread;
     private int moveNum;
     private ArrayList<MoveVotes> moveHistory;
-    private List<String> selectedMoves = new ArrayList<>();
+    //private List<String> selectedMoves = new ArrayList<>();
     private GAME_PHASE phase = GAME_PHASE.PREGAME;
     private int voteLimit = 1;
     private int moleBonus = 100, winBonus = 200;
@@ -181,6 +181,8 @@ public class MoleGame implements Runnable {
     private boolean teamMovePrediction = false;
     private boolean hideMoveVote = false;
     private boolean PASTELS = false;
+    private final String CR = System.getProperty("line.separator"); //System.lineSeparator();
+    private StringBuffer pgnBuff = new StringBuffer();
 
     public MoleGame(MoleUser c, String t, String startFEN, MoleListener l) {
         gameLog = Logger.getLogger(t);
@@ -695,6 +697,7 @@ public class MoleGame implements Runnable {
         setMole(COLOR_BLACK);
         setMole(COLOR_WHITE);
         listener.started(this);  //starting position
+        startPGN();
         while (playing && !closing) {
             spam("Turn #" + moveNum + ": " + colorString(turn));
             updateMoveVotes();
@@ -722,12 +725,14 @@ public class MoleGame implements Runnable {
                 }
 
                 if (makeMove(move).success) {
-                    moveHistory.add(getMoveVotes(turn, board.getFen(), move));
+                    MoveVotes votes = getMoveVotes(turn, board.getFen(), move);
+                    moveHistory.add(votes);
+                    updatePGN(votes);
                     update(new MoleResult("Selected Move: " + move.getSan()), true); //TODO: make less spammy
                     ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
                     node.put("move",move.getSan()); node.set("game",this.toJSON(false));
                     spamNode("move",node);
-                    selectedMoves.add(move.getSan());
+                    //selectedMoves.add(move.getSan());
                     endgameCheck();
                     if (playing) {
                         MolePlayer predictor = testPrediction(mole,counterMole);
@@ -822,12 +827,14 @@ public class MoleGame implements Runnable {
             spam(suspect.user.name + " is voted off!",suspect);
             if (suspect.role == MolePlayer.ROLE.MOLE) {
                 spam(suspect.user.name + " was " + "the Mole!",suspect); //award(player.color, moleBonus);
+                pgnBuff.append(" {").append("VOTED OFF: ").append(suspect.user.name).append("} ");
                 if (defection) defect(suspect); else suspect.votedOff = true;
             } else {
                 MolePlayer mole = getMole(player.color);
                 if (mole != null) {
                     spam(mole.user.name + " was " + "the Mole!",mole); //award(mole, moleBonus);
                     spamNode("rampage", mole.toJSON());
+                    pgnBuff.append(" {").append("RAMPAGE: ").append(mole.user.name).append("} ");
                 }
                 else spam("WTF: no mole!");
             }
@@ -942,25 +949,33 @@ public class MoleGame implements Runnable {
         interruptPhase();
     }
 
+    private void startPGN() {
+        pgnBuff.append(pgnTag("Site","molechess.com") + CR);
+        pgnBuff.append(pgnTag("Date", LocalDate.now().toString()) + CR);
+        pgnBuff.append(pgnTag("White",teams[COLOR_WHITE].toString(true)) + CR);
+        pgnBuff.append(pgnTag("Black",teams[COLOR_BLACK].toString(true)) + CR);
+    }
+
+    private void updatePGN(MoveVotes votes) {
+        String pfx = getTurnPrefix();
+        pgnBuff.append(pfx)
+                .append(votes.selected.move.getSan())
+                .append(" {")
+                .append(votes.selected.player == null ? "?" : votes.selected.player.user.name)
+                .append(getPgnMoveArrows(votes))
+                .append("} ");
+        for (MoveVote alt : votes.alts) if (alt.player != null)
+            pgnBuff.append(" ( ")
+                    .append(alt.move.getSan())
+                    .append(" {")
+                    .append(alt.player.user.name)
+                    .append("} ) ");
+    }
+
     private String createPGN(String result) {
-        String n = System.getProperty("line.separator");
         StringBuffer pgn = new StringBuffer();
-        pgn.append(pgnTag("Site","molechess.com") + n);
-        pgn.append(pgnTag("Date", LocalDate.now().toString()) + n);
-        pgn.append(pgnTag("White",teams[COLOR_WHITE].toString(true)) + n);
-        pgn.append(pgnTag("Black",teams[COLOR_BLACK].toString(true)) + n);
-        pgn.append(pgnTag("Result",result) + n);
-        int t = 1;
-        for (MoveVotes votes : moveHistory) {
-            String pfx = (votes.color == COLOR_WHITE) ? t++ + "." : t + "...";
-            pgn.append(pfx + votes.selected.move.getSan() +
-            " {" + (votes.selected.player == null ? "?" : votes.selected.player.user.name) +
-            getPgnMoveArrows(votes) + "} ");
-            for (MoveVote alt : votes.alts) {
-                if (alt.player != null) pgn.append("( " + alt.move.getSan() + " {" + alt.player.user.name + "} )");
-            }
-        }
-        return pgn.toString();
+        pgn.append(pgnTag("Result",result) + CR);
+        return pgn.append(pgnBuff).toString();
     }
 
     private String getPgnMoveArrows(MoveVotes votes) {
