@@ -8,13 +8,20 @@ import java.awt.*;
 
 public class MolePlayer implements StockListener {
 
-    enum ROLE {MOLE, PLAYER}
+    enum ROLE {MOLE, PLAYER, INSPECTOR, BLOCKER}
     MoleGame game;
     MoleUser user;
     boolean away = false;
     boolean votedOff = false;
     boolean ai = false;
     boolean resigning = false;
+    boolean inspecting = false;
+    boolean bombing = false;
+    int bombed = 0;
+    int maxBomb = 1;
+    boolean blocking = false;
+    int blocked = 0;
+    int maxBlock = 2;
     int rating;
     int score;
     int color;
