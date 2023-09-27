@@ -14,6 +14,9 @@ import org.chernovia.lib.zugserv.web.WebSockServ;
 import org.chernovia.utils.CommandLineParser;
 
 import java.io.InputStream;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLType;
+import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -290,6 +293,26 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         );
     }
 
+    private Optional<ObjectNode> getPlayerData(String name) {
+        return moleBase.makeQuery("SELECT * FROM players WHERE players.Name = ?").
+                flatMap(query -> query.mapResultSet(statement -> {
+                            statement.setString(1, name);
+                        }, rs -> {
+                            ObjectNode node = OBJ_MAPPER.createObjectNode();
+                            if (rs.next()) {
+                                ResultSetMetaData metaData =  rs.getMetaData();
+                                for (int i=1; i<=metaData.getColumnCount(); i++) {
+                                    String colName = metaData.getColumnName(i);
+                                    int type = metaData.getColumnType(i);
+                                    if (type == Types.INTEGER)  node.put(colName,rs.getInt(colName));
+                                    else if (type == Types.VARCHAR) node.put(colName,rs.getString(colName));
+                                }
+                            }
+                            return Optional.of(node);
+                        })
+                );
+    }
+
     public JsonNode toJSON() {
         ObjectNode node = OBJ_MAPPER.createObjectNode();
         node.put("Uptime: ", (System.currentTimeMillis() - startTime) / 1000);
@@ -405,7 +428,17 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             } else if (typeTxt.equals("top")) {
                 getTopPlayers(Integer.parseInt(dataTxt)).ifPresent(it -> user.tell("top", it));
             } else if (typeTxt.equals("history")) {
-                getPlayerHistory(user.name, Integer.parseInt(dataTxt)).ifPresent(it -> user.tell("history", it));
+                JsonNode name = dataNode.get("name"); String player = name == null ? user.name : name.textValue();
+                JsonNode num = dataNode.get("num"); int n = num == null ? 10 : num.intValue();
+                //System.out.println("HISTORY: " + player + "," + n);
+                getPlayerHistory(player,n).ifPresent(pgnList -> {
+                    getPlayerData(player).ifPresent((pData -> {
+                        ObjectNode node = OBJ_MAPPER.createObjectNode();
+                        node.set("pgn_list",pgnList);
+                        node.set("player_data",pData);
+                        user.tell("history", node);
+                    }));
+                });
             } else if (typeTxt.equals("chat")) {
                 JsonNode sourceNode = dataNode.get("source");
                 if (sourceNode != null) { // && dataNode != null

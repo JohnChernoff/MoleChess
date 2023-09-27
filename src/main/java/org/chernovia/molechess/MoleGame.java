@@ -76,6 +76,8 @@ public class MoleGame implements Runnable {
         ArrayList<MolePlayer> startPlayers;
         int voteCount;
         int color;
+        int bombFlag = 99;
+        int inspectFlag = -12;
 
         public MoleTeam() {
             players = new ArrayList<>(); startPlayers = new ArrayList<>();
@@ -171,8 +173,8 @@ public class MoleGame implements Runnable {
     private GAME_PHASE phase = GAME_PHASE.PREGAME;
     private int voteLimit = 1;
     private int moleBonus = 100, winBonus = 200;
-    private int inspectPly = 12; private int inspectFlag = 0;
-    private int bombPly = 100; private int bombFlag = 80;
+    private int inspectPly = 12;
+    private int bombPly = 100;
     private boolean aiFilling = true;
     private boolean endOnMutualAccusation = false;
     private boolean endOnAccusation = false;
@@ -765,7 +767,7 @@ public class MoleGame implements Runnable {
                         }
                         clearPlayerFlags();
                         turn = getNextTurn();
-                        ply++; bombFlag++; inspectFlag++;
+                        ply++; teams[turn].bombFlag++; teams[turn].inspectFlag++;
                     }
                 } else { spam("WTF: " + move); return; } ////shouldn't occur
 
@@ -816,14 +818,15 @@ public class MoleGame implements Runnable {
         else if (player.role != MolePlayer.ROLE.INSPECTOR) {
             update(user,new MoleResult(false,"You're not the inspector!"));
         }
-        else if (inspectFlag < inspectPly) {
-            update(user,new MoleResult(false,"You can inspect in " + (inspectPly - inspectFlag) + " moves."));
+        else if (teams[player.color].inspectFlag < inspectPly) {
+            update(user,new MoleResult(false,"You can inspect in " +
+                    (inspectPly - teams[player.color].inspectFlag) + " moves."));
         }
         else {
             user.tell("The mole played: " + revealMoleMove(getMole(player.color)),this);
             player.inspecting = true;
-            player.move = getRandomMove(); //user.tell("Your move: " + player.move.getSan());
-            inspectFlag = 0;
+            player.move = getRandomMove();
+            teams[player.color].inspectFlag = 0;
         }
     }
 
@@ -838,13 +841,14 @@ public class MoleGame implements Runnable {
         else if (player.role != MolePlayer.ROLE.MOLE) {
             update(user,new MoleResult(false,"You're not the Mole!"));
         }
-        else if (bombFlag < bombPly) {
-            update(user,new MoleResult(false,"You can bomb in " + (bombPly - bombFlag) + " moves."));
+        else if (teams[player.color].bombFlag < bombPly) {
+            update(user, new MoleResult(false,"You can bomb in " +
+                    (bombPly - teams[player.color].bombFlag) + " moves."));
         }
-        else {
+        else { //user.tell("Bomb disabled, pending bugfix, sorry!",this);
             user.tell("Bomb set!",this);
             player.bombing = true;
-            bombFlag = 0;
+            teams[player.color].bombFlag = 0;
         }
     }
 

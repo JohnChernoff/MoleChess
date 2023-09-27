@@ -17,12 +17,8 @@ public class MolePlayer implements StockListener {
     boolean resigning = false;
     boolean inspecting = false;
     boolean bombing = false;
-    int bombed = 0;
-    int maxBomb = 1;
     boolean blocking = false;
-    int blocked = 0;
-    int maxBlock = 2;
-    int rating;
+    //int bombed = 0; int maxBomb = 1; int blocked = 0; int maxBlock = 2; int rating;
     int score;
     int color;
     int skipped;
