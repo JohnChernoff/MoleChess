@@ -185,7 +185,9 @@ public class MoleGame implements Runnable {
     private boolean moleMovePrediction = false;
     private boolean teamMovePrediction = false;
     private boolean hideMoveVote = false;
-    private boolean inspecting = false;
+    private boolean moleBomb = true;
+    private boolean inspecting = true;
+    private boolean casual = true;
     private boolean PASTELS = false;
     private final String CR = System.getProperty("line.separator"); //System.lineSeparator();
     private StringBuffer pgnBuff = new StringBuffer();
@@ -306,6 +308,18 @@ public class MoleGame implements Runnable {
     public void setInspecting(boolean bool) {
         if (inspecting != bool) {
             inspecting = bool; spam("Inspector Role: " + inspecting);
+        }
+    }
+
+    public void setMoleBomb(boolean bool) {
+        if (moleBomb != bool && phase == GAME_PHASE.PREGAME) {
+            moleBomb = bool; spam("Mole Bomb: " + moleBomb);
+        }
+    }
+
+    public void setCasual(boolean bool) {
+        if (casual != bool && phase == GAME_PHASE.PREGAME) {
+            casual = bool; spam("Casual: " + casual);
         }
     }
 
@@ -845,6 +859,9 @@ public class MoleGame implements Runnable {
             update(user, new MoleResult(false,"You can bomb in " +
                     (bombPly - teams[player.color].bombFlag) + " moves."));
         }
+        else if (!moleBomb) {
+            update(user,new MoleResult(false,"Bomb disabled"));
+        }
         else { //user.tell("Bomb disabled, pending bugfix, sorry!",this);
             user.tell("Bomb set!",this);
             player.bombing = true;
@@ -1000,15 +1017,15 @@ public class MoleGame implements Runnable {
         }
         else if (winner != COLOR_UNKNOWN) {
             spam(colorString(winner) + " wins by " + reason + "!"); //award(winner,winBonus);
-            listener.updateUserData(teams[winner].players, teams[getNextTurn(winner)].players, false);
+            if (!casual) listener.updateUserData(teams[winner].players, teams[getNextTurn(winner)].players,false);
             result = (winner == COLOR_WHITE) ? "1-0" : "0-1";
         } else {
             spam("Game Over! (" + reason + ")");
-            listener.updateUserData(teams[COLOR_WHITE].players, teams[COLOR_BLACK].players, true);
+            if (!casual) listener.updateUserData(teams[COLOR_WHITE].players, teams[COLOR_BLACK].players,true);
             if (reason.equals("deserted")) result = "aborted"; else result = "1/2-1/2";
         }
 
-        if (phase != GAME_PHASE.PREGAME) {
+        if (!casual && phase != GAME_PHASE.PREGAME) {
             listener.saveGame(createPGN(result), teams[COLOR_WHITE].players, teams[COLOR_BLACK].players, winner);
             for (MolePlayer player : teams[COLOR_WHITE].startPlayers) {
                 if (player.role == MolePlayer.ROLE.MOLE) spam("White Mole: " + player.user.name);
@@ -1394,7 +1411,9 @@ public class MoleGame implements Runnable {
         options.put("mole_piece_predict",molePiecePrediction);
         options.put("team_move_predict",teamMovePrediction);
         options.put("hide_move",hideMoveVote);
+        options.put("mole_bomb",moleBomb);
         options.put("inspector_role",inspecting);
+        options.put("casual",casual);
         return options;
     }
 

@@ -241,25 +241,6 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         });
     }
 
-    /*
-    private void updateUserData(MoleUser user, String field, int newValue) {
-        moleBase.makeQuery(
-                        "UPDATE `players` SET ?=? WHERE Name=?")
-                .ifPresent(query -> query.runUpdate(statement -> {
-                    statement.setString(1, field);
-                    statement.setInt(2, newValue);
-                    statement.setString(3, user.name);
-                }));
-        user.getData().ifPresent(data -> {
-            user.tell(field + ": " + data.rating + " -> " + newRating);
-            moleBase.makeQuery("UPDATE `players` SET " + (winner ? "Wins" : "Losses") + "=? WHERE Name=?")
-                    .ifPresent(query -> query.runUpdate(statement -> {
-                        statement.setInt(1, (winner ? data.wins : data.losses) + 1);
-                        statement.setString(2, user.name);
-                    }));
-        });
-    } */
-
     private Optional<ArrayNode> getTopPlayers(int n) { // TODO: Split into 2 functions
         return moleBase.makeQuery("SELECT * FROM players ORDER BY Rating DESC LIMIT ?").flatMap(query ->
                 query.mapResultSet(statement -> statement.setInt(1, n), rs -> {
@@ -571,8 +552,14 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         JsonNode hideMoveVote = data.get("hide_move_vote");
         if (hideMoveVote != null) game.setHideMoveVote(hideMoveVote.asBoolean());
 
+        JsonNode moleBomb = data.get("mole_bomb");
+        if (moleBomb != null) game.setMoleBomb(moleBomb.asBoolean());
+
         JsonNode inspectorRole = data.get("inspector_role");
         if (inspectorRole != null) game.setInspecting(inspectorRole.asBoolean());
+
+        JsonNode causal = data.get("causal");
+        if (causal != null) game.setCasual(causal.asBoolean());
     }
 
     private void broadcast(MoleGame game, ObjectNode node) {
