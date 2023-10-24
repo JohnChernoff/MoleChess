@@ -395,10 +395,12 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 user.tell("conn_stat",conn.getStatus().name());
             } else if (typeTxt.equals("login")) {
                 handleLogin(conn, dataTxt, testing);
+            } else if (typeTxt.equals("logout")) {
+                logout(user);
             } else if (typeTxt.equals("obs")) {
                 handleObs(conn,dataTxt);
             } else if (user == null) {
-                conn.tell(ZugServ.MSG_ERR, "Please log in");
+                conn.tell("no_log", "Please log in");
             } else if (!user.newMessage(5,10000)) {
                 user.tell("spam","Message not sent (spam)");
             } else if (typeTxt.equals("newgame")) {
@@ -444,15 +446,15 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             } else if (typeTxt.equals("cmd")) {
                 handleCmd(user, dataNode);
             } else { //must be a game command
-                MoleGame game = games.get(dataTxt); //TODO: simplify
+                MoleGame game = games.get(dataTxt); //TODO: simplify?
                 if (game == null) {
-                    JsonNode gameNode = dataNode.get("game");
+                    JsonNode gameNode = dataNode.get("game"); //log("Game: " + gameNode);
                     if (gameNode != null) game = games.get(gameNode.asText());
                 }
                 if (game != null) {
                     handleGameCmd(user,typeTxt,game,dataNode);
                 } else {
-                    user.tell(ZugServ.MSG_ERR, "Unknown command: " + typeTxt);
+                    user.tell(ZugServ.MSG_ERR, "Unknown game/command: " + typeTxt);
                 }
             }
         } catch (JsonMappingException e) {
@@ -462,6 +464,15 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         } catch (NullPointerException e) {
             e.printStackTrace();
         }
+    }
+
+    private void logout(MoleUser user) {
+        if (users.contains(user)) {
+            user.tell("Goodbye!");
+            purgeUser(user);
+            users.remove(user);
+        }
+        else user.tell("You're not logged in!");
     }
 
     private boolean handleGameCmd(MoleUser user, String cmd, MoleGame game, JsonNode data) {
@@ -528,28 +539,29 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         return true;
     }
 
-    private void setGameOptions(MoleUser user, MoleGame game, JsonNode data) {
+    private void setGameOptions(MoleUser user, MoleGame game, JsonNode data) { // log(data.toString());
+
         if (!game.getCreator().equals(user)) return;
 
-        JsonNode time = data.get("time");
+        JsonNode time = data.get("move_time");
         if (time != null) game.setMoveTime(time.asInt());
 
-        JsonNode maxPlayers = data.get("max_players");
+        JsonNode maxPlayers = data.get("max_play");
         if (maxPlayers != null) game.setMaxPlayers(maxPlayers.asInt());
 
         JsonNode moleVeto = data.get("mole_veto");
         if (moleVeto != null) game.setMoleVeto(moleVeto.asBoolean());
 
-        JsonNode molePredictPiece = data.get("mole_predict_piece"); //TODO: meh
-        if (molePredictPiece != null)  game.setMolePiecePrediction(molePredictPiece.asBoolean());
-
-        JsonNode molePredictMove = data.get("mole_predict_move");
+        JsonNode molePredictMove = data.get("mole_move_predict");
         if (molePredictMove != null) game.setMoleMovePrediction(molePredictMove.asBoolean());
 
-        JsonNode teamPredictMove = data.get("team_predict_move");
+        //JsonNode molePredictPiece = data.get("mole_piece_predict"); //TODO: meh
+        //if (molePredictPiece != null)  game.setMolePiecePrediction(molePredictPiece.asBoolean());
+
+        JsonNode teamPredictMove = data.get("team_move_predict");
         if (teamPredictMove != null) game.setTeamMovePrediction(teamPredictMove.asBoolean());
 
-        JsonNode hideMoveVote = data.get("hide_move_vote");
+        JsonNode hideMoveVote = data.get("hide_move");
         if (hideMoveVote != null) game.setHideMoveVote(hideMoveVote.asBoolean());
 
         JsonNode moleBomb = data.get("mole_bomb");
@@ -558,7 +570,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         JsonNode inspectorRole = data.get("inspector_role");
         if (inspectorRole != null) game.setInspecting(inspectorRole.asBoolean());
 
-        JsonNode causal = data.get("causal");
+        JsonNode causal = data.get("casual"); //log("Casual: " + causal);
         if (causal != null) game.setCasual(causal.asBoolean());
     }
 
@@ -625,7 +637,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         if (data.ok) {
             MoleUser user = getUserByName(data.name);
             if (user != null) {
-                user.tell("Multiple login detected, closing");
+                user.tell("disconnected","Multiple login detected, closing");
                 user.getConn().close();
                 user.setConn(conn);  user.oauth = data.oauth;
                 conn.setStatus(Connection.Status.STATUS_OK);
@@ -636,7 +648,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     }
 
     private void handleLogin(Connection conn, String token, boolean testing) {
-        LichessAccountData accountData = new LichessAccountData(token);
+        System.out.println("TOKEN: " + token);
+        LichessAccountData accountData = testing ? null : new LichessAccountData(token);
         MoleUser relogger = handleRelogging(conn, accountData);
         if (relogger != null) {
             addUser(relogger, "Relog Successful: Welcome back!", false);
@@ -747,13 +760,14 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     @Override
     public void disconnected(Connection conn) { //TODO: concurrency argh
         MoleUser user = getUser(conn);
-        if (user != null) {
-            for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
-                MoleGame game = entry.getValue();
-                game.dropPlayer(user);
-            }
-        }
+        if (user != null) purgeUser(user);
         conn.setStatus(Connection.Status.STATUS_DISCONNECTED);
+    }
+
+    public void purgeUser(MoleUser user) {
+        for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
+            entry.getValue().dropPlayer(user);
+        }
     }
 
     private void updateGames(boolean deepcopy) {

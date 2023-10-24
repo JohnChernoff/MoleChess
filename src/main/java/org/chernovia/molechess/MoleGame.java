@@ -317,7 +317,7 @@ public class MoleGame implements Runnable {
         }
     }
 
-    public void setCasual(boolean bool) {
+    public void setCasual(boolean bool) { //System.out.println("Setting casual:" + bool);
         if (casual != bool && phase == GAME_PHASE.PREGAME) {
             casual = bool; spam("Casual: " + casual);
         }
@@ -767,10 +767,14 @@ public class MoleGame implements Runnable {
                     MoveVotes votes = getMoveVotes(turn, board.getFen(), move,bomb);
                     moveHistory.add(votes);
                     updatePGN(votes);
-                    update(new MoleResult("Selected Move: " + move.getSan()), true); //TODO: make less spammy
+                    //update(new MoleResult("Selected Move: " + move.getSan()), true); //TODO: make less spammy
                     ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
-                    node.put("move",move.getSan()); node.set("game",this.toJSON(false));
+                    node.put("move",move.getSan());
+                    node.put("title",title);
+                    node.put("ply",ply);
+                    node.set("move_votes",votes.toJSON());
                     spamNode("move",node); //selectedMoves.add(move.getSan());
+                    spam("Selected Move: " + move.getSan());
                     endgameCheck();
                     if (playing) {
                         MolePlayer predictor = testPrediction(mole,counterMole);
@@ -1404,11 +1408,11 @@ public class MoleGame implements Runnable {
 
     public ObjectNode getGameOptions() {
         ObjectNode options = MoleServ.OBJ_MAPPER.createObjectNode();
-        options.put("move_time",moveTime);
+        options.put("move_time",phase == GAME_PHASE.PREGAME ? newTime : moveTime);
         options.put("max_play",maxPlayers);
         options.put("mole_veto",moleVeto);
         options.put("mole_move_predict",moleMovePrediction);
-        options.put("mole_piece_predict",molePiecePrediction);
+        //options.put("mole_piece_predict",molePiecePrediction);
         options.put("team_move_predict",teamMovePrediction);
         options.put("hide_move",hideMoveVote);
         options.put("mole_bomb",moleBomb);
