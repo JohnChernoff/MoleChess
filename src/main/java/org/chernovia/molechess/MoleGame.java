@@ -337,9 +337,7 @@ public class MoleGame implements Runnable {
 
     private void update(MoleUser user, MoleResult action) { update(user, action, false); }
     private void update(MoleResult action) { update(null, action, false); }
-    private void update(MoleResult action, boolean moves) {
-        update(null, action, moves);
-    }
+    //private void update(MoleResult action, boolean moves) { update(null, action, moves); }
     private void update(MoleUser user, MoleResult action, boolean moves) {
         if (listener != null) {
             if (user == null) listener.updateGame(this, action, moves);
@@ -381,8 +379,9 @@ public class MoleGame implements Runnable {
         update(user, new MoleResult("No longer observing: " + title));
     }
 
+    public void addPlayer(MoleUser user) { addPlayer(user,COLOR_UNKNOWN); }
     public void addPlayer(MoleUser user, int color) {
-        if (color < 0 || color >= teams.length) {
+        if (!BUCKETS && (color < 0 || color >= teams.length)) {
             update(user, new MoleResult(false, "Bad color")); return;
         }
         MolePlayer player = getPlayer(user);
@@ -529,12 +528,14 @@ public class MoleGame implements Runnable {
                     aiFill(COLOR_BLACK);
                     aiFill(COLOR_WHITE);
                 }
-                for (MolePlayer p : teams[COLOR_WHITE].players) {
-                    p.user.tell("color", "white");
-                }
-                for (MolePlayer p : teams[COLOR_BLACK].players) {
-                    p.user.tell("color", "black");
-                }
+
+                ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+                node.put("source",title);
+                node.put("color","white");
+                for (MolePlayer p : teams[COLOR_WHITE].players) p.user.tell("side", node);
+                node.put("color","black");
+                for (MolePlayer p : teams[COLOR_BLACK].players) p.user.tell("side", node);
+
                 gameThread = new Thread(this);
                 gameThread.start();
             }
@@ -717,6 +718,8 @@ public class MoleGame implements Runnable {
     public void interruptPhase() {
         if (gameThread != null && gameThread.getState() == Thread.State.TIMED_WAITING) gameThread.interrupt();
     }
+
+    //private void detonate() {}
 
     public void run() {
         playing = true;
@@ -926,8 +929,7 @@ public class MoleGame implements Runnable {
                 MolePlayer mole = getMole(player.color);
                 if (mole != null) {
                     spam(mole.user.name + " was " + "the Mole!",mole); //award(mole, moleBonus);
-                    spamNode("rampage", mole.toJSON());
-                    pgnBuff.append(" {").append("RAMPAGE: ").append(mole.user.name).append("} ");
+                    rampage(mole);
                 }
                 else spam("WTF: no mole!");
             }
@@ -939,6 +941,14 @@ public class MoleGame implements Runnable {
                 endGame(COLOR_UNKNOWN, "mutual mole vote");
             }
         }
+    }
+
+    private void rampage(MolePlayer player) {
+        pgnBuff.append(" {").append("RAMPAGE: ").append(player.user.name).append("} ");
+        ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+        node.put("game",title);
+        node.set("player",player.toJSON());
+        spamNode("rampage", node);
     }
 
     private void defect(MolePlayer player) {
@@ -953,7 +963,10 @@ public class MoleGame implements Runnable {
         player.skipped = 0;
         teams[player.color].players.add(player);
         update(new MoleResult(player.user.name + " defects to " + colorString(newColor) + "!"));
-        spamNode("defection",player.toJSON());
+        ObjectNode node = MoleServ.OBJ_MAPPER.createObjectNode();
+        node.put("game",title);
+        node.set("player",player.toJSON());
+        spamNode("defection",node);
     }
 
     private JsonNode historyToJSON() {

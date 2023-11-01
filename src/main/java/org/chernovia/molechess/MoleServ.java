@@ -15,7 +15,6 @@ import org.chernovia.utils.CommandLineParser;
 
 import java.io.InputStream;
 import java.sql.ResultSetMetaData;
-import java.sql.SQLType;
 import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -61,7 +60,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private int purgeFreq = 30, maxUserGames = 3, defMoveTime = 60;
     private long startTime;
     private boolean running = false;
-    private boolean testing = false;
+    private boolean noOauth = false;
     private final MoleBase moleBase;
 
     public static void main(String[] args) {
@@ -81,8 +80,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         String[] movetime = parser.getArgumentValue("movetime");
         if (movetime != null) defMoveTime = Integer.parseInt(movetime[0]);
         log("Move Time: " + defMoveTime);
-        testing = parser.getFlag("testing");
-        log("Testing: " + testing);
+        noOauth = parser.getFlag("noOauth");
+        log("No Oauth: " + noOauth);
         log("Constructing MoleServ on port: " + port);
         serv = new WebSockServ(port, this);
         serv.startSrv();
@@ -394,7 +393,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             if (typeTxt.equals("pong")) {
                 user.tell("conn_stat",conn.getStatus().name());
             } else if (typeTxt.equals("login")) {
-                handleLogin(conn, dataTxt, testing);
+                handleLogin(conn, dataTxt);
             } else if (typeTxt.equals("logout")) {
                 logout(user);
             } else if (typeTxt.equals("obs")) {
@@ -404,10 +403,11 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             } else if (!user.newMessage(5,10000)) {
                 user.tell("spam","Message not sent (spam)");
             } else if (typeTxt.equals("newgame")) {
-                JsonNode color = dataNode.get("color");
-                JsonNode title = dataNode.get("game");
-                if (color != null && title != null) newGame(user,title.asText(),color.asInt());
-                else user.tell(ZugServ.MSG_ERR, "Ruhoh: Invalid Data!");
+                JsonNode colorNode = dataNode.get("color");
+                int color = colorNode == null || colorNode.isNull() ? MoleGame.COLOR_UNKNOWN : colorNode.asInt();
+                JsonNode titleNode = dataNode.get("game");
+                String title = titleNode == null || titleNode.isNull() ? "Untitled" : titleNode.asText();
+                newGame(user,title,color); //else user.tell(ZugServ.MSG_ERR, "Ruhoh: Invalid Data!");
             } else if (typeTxt.equals("top")) {
                 getTopPlayers(Integer.parseInt(dataTxt)).ifPresent(it -> user.tell("top", it));
             } else if (typeTxt.equals("history")) {
@@ -510,7 +510,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         }
         else if (cmd.equalsIgnoreCase("joingame")) {
             JsonNode color = data.get("color");
-            game.addPlayer(user,color.isNull() ? MoleGame.COLOR_UNKNOWN : color.asInt());
+            game.addPlayer(user,color == null || color.isNull() ? MoleGame.COLOR_UNKNOWN : color.asInt());
         }
         else if (cmd.equalsIgnoreCase("abort")) {
             game.abortGame(user);
@@ -647,13 +647,12 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         return null;
     }
 
-    private void handleLogin(Connection conn, String token, boolean testing) {
-        System.out.println("TOKEN: " + token);
-        LichessAccountData accountData = testing ? null : new LichessAccountData(token);
+    private void handleLogin(Connection conn, String token) { //System.out.println("TOKEN: " + token);
+        LichessAccountData accountData = noOauth ? null : new LichessAccountData(token);
         MoleUser relogger = handleRelogging(conn, accountData);
         if (relogger != null) {
             addUser(relogger, "Relog Successful: Welcome back!", false);
-        } else if (testing) {
+        } else if (noOauth) {
             String name = token;
             if (validString(name)) {
                 addUser(new MoleUser(conn, token, name, 1600), "Test Login Successful: Welcome!");
