@@ -409,6 +409,7 @@ public class MoleGame implements Runnable {
             update(new MoleResult(user.name + " joins the game"));
             user.tell("join",toJSON(false)); //update(user, new MoleResult("Joined game: " + title), true);
             lastActivity = System.currentTimeMillis();
+            if (isReady().message.equals(READY)) listener.ready(this); //if (isReady().success) listener.ready(this);
         }
     }
 

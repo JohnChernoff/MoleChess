@@ -62,6 +62,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     private boolean running = false;
     private boolean noOauth = false;
     private final MoleBase moleBase;
+    private final MoleDisco moleDisco;
 
     public static void main(String[] args) {
         new MoleServ(5555, args).start();
@@ -81,7 +82,9 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         if (movetime != null) defMoveTime = Integer.parseInt(movetime[0]);
         log("Move Time: " + defMoveTime);
         noOauth = parser.getFlag("noOauth");
-        log("No Oauth: " + noOauth);
+        log("Oauth: " + !noOauth);
+        String[] discoTok = parser.getArgumentValue("discoTok");
+        if (discoTok != null)  moleDisco = new MoleDisco(discoTok[0]); else moleDisco = null;
         log("Constructing MoleServ on port: " + port);
         serv = new WebSockServ(port, this);
         serv.startSrv();
@@ -365,6 +368,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 games.put(title, game);
                 game.addPlayer(creator, color);
                 updateGames(false);
+                moleDisco.newGame(title);
             }
         } else {
             creator.tell(ZugServ.MSG_ERR, "Failed to create game: bad title");
@@ -740,9 +744,15 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     }
 
     @Override
+    public void ready(MoleGame game) {
+        moleDisco.notifyReady(game.getTitle());
+    }
+
+    @Override
     public void started(MoleGame game) {
         game.spamNode(MSG_GAME_UPDATE, game.toJSON(true));
         updateGames(false);
+        moleDisco.startGame(game.getTitle());
     }
 
 
@@ -750,6 +760,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     public void finished(MoleGame game) {
         games.remove(game.getTitle());
         updateGames(false);
+        moleDisco.endGame(game.getTitle());
     }
 
     @Override

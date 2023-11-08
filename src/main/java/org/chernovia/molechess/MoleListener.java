@@ -12,6 +12,8 @@ public interface MoleListener {
 
     void updateGame(MoleGame game, MoleResult action, boolean movelist);
 
+    void ready(MoleGame game);
+
     void finished(MoleGame game);
 
     void saveGame(String pgn, List<MolePlayer> whiteTeam, List<MolePlayer> blackTeam, int winner);
