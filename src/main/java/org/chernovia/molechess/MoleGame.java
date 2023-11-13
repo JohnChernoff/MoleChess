@@ -189,6 +189,7 @@ public class MoleGame implements Runnable {
     private boolean inspecting = true;
     private boolean casual = true;
     private boolean PASTELS = false;
+    private boolean dinked = false;
     private final String CR = System.getProperty("line.separator"); //System.lineSeparator();
     private StringBuffer pgnBuff = new StringBuffer();
 
@@ -327,17 +328,12 @@ public class MoleGame implements Runnable {
         return kickFlag;
     }
 
-    public boolean isDefunct() {
-        return isDefunct(preTime * 1000);
-    }
-
     public boolean isDefunct(int timeout) {
         return (!playing && ((System.currentTimeMillis() - timeout) > lastActivity));
     }
 
     private void update(MoleUser user, MoleResult action) { update(user, action, false); }
     private void update(MoleResult action) { update(null, action, false); }
-    //private void update(MoleResult action, boolean moves) { update(null, action, moves); }
     private void update(MoleUser user, MoleResult action, boolean moves) {
         if (listener != null) {
             if (user == null) listener.updateGame(this, action, moves);
@@ -368,18 +364,19 @@ public class MoleGame implements Runnable {
     }
 
     public void addObserver(MoleUser user) {
-        if (!observers.contains(user)) {
-            observers.add(user); //user.tell(MSG_TYPE_MOVELIST,historyToJSON());
+        if (getPlayer(user) == null) { //can't observe game you're in
+            if (!observers.contains(user)) {
+                observers.add(user);
+            } //else update(user, new MoleResult(false, "Error: already observing"));
             update(user, new MoleResult("Observing: " + title), true);
-        } else update(user, new MoleResult(false, "Error: already observing"));
+        }
     }
 
     public void removeObserver(MoleUser user) {
         observers.remove(user);
-        update(user, new MoleResult("No longer observing: " + title));
+        user.tell("unobs",this.toJSON(false));
     }
 
-    public void addPlayer(MoleUser user) { addPlayer(user,COLOR_UNKNOWN); }
     public void addPlayer(MoleUser user, int color) {
         if (!BUCKETS && (color < 0 || color >= teams.length)) {
             update(user, new MoleResult(false, "Bad color")); return;
@@ -390,6 +387,7 @@ public class MoleGame implements Runnable {
                 player.away = false;
                 update(user, new MoleResult("Rejoining game: " + title), true);
                 update(new MoleResult(user.name + " rejoins the game"));
+                removeObserver(user);
 
             } else update(user, new MoleResult(false, "Error: already joined"));
         } else if (phase != GAME_PHASE.PREGAME) {
@@ -406,10 +404,15 @@ public class MoleGame implements Runnable {
                 MolePlayer newPlayer = new MolePlayer(user, this, color, nextGUIColor());
                 teams[color].players.add(newPlayer);
             }
+            removeObserver(user);
             update(new MoleResult(user.name + " joins the game"));
             user.tell("join",toJSON(false)); //update(user, new MoleResult("Joined game: " + title), true);
             lastActivity = System.currentTimeMillis();
-            if (isReady().message.equals(READY)) listener.ready(this); //if (isReady().success) listener.ready(this);
+            if (!dinked && isReady().message.equals(READY)) {
+                listener.ready(this); //if (isReady().success) listener.ready(this);
+                spamNode("ready",this.toJSON(false));
+                dinked = true;
+            }
         }
     }
 
@@ -428,7 +431,7 @@ public class MoleGame implements Runnable {
                 if (phase == GAME_PHASE.POSTGAME && user.equals(creator)) interruptPhase();
             }
             update(new MoleResult(user.name + " leaves"));
-            user.tell("part",toJSON(false)); //update(player.user,new MoleResult("Leaving: " + title));
+            user.tell("part",toJSON(false));
             if (isDeserted()) {
                 switch (phase) {
                     case PREGAME -> listener.finished(this);
@@ -464,7 +467,7 @@ public class MoleGame implements Runnable {
 
     public MoleResult isReady() {
         if (BUCKETS) {
-            if (playerBucket.size() < minPlayers) {
+            if (playerBucket.size() < (minPlayers * 2)) {
                 return new MoleResult(aiFilling,INSUFFICIENT);
             }
             else {
@@ -485,10 +488,10 @@ public class MoleGame implements Runnable {
 
     public void abortGame(MoleUser user) {
         if (!creator.equals(user)) {
-            update(new MoleResult(false,"You're not the creator of this game",user));
+            update(user,new MoleResult(false,"You're not the creator of this game"));
         }
         else if (phase == GAME_PHASE.VOTING && ply >= abortMoveLimit) { //VETO?
-            update(new MoleResult(false,"You can only abort running games before move " + abortMoveLimit,user));
+            update(user,new MoleResult(false,"You can only abort running games before move " + abortMoveLimit));
         }
         else {
             spam("Game aborted by creator: " + user.name);
@@ -511,7 +514,7 @@ public class MoleGame implements Runnable {
             if (ready.success) {
                 if (BUCKETS) {
                     if (playerBucket.size() > 1) {
-                        BucketList bucketList = bucketSort(); log("Sorted: " + bucketList.toString()); //System.exit(-1);
+                        BucketList bucketList = bucketSort(); //log("Sorted: " + bucketList.toString()); //System.exit(-1);
                         for (MolePlayer p : bucketList.black_players) {
                             teams[COLOR_BLACK].players.add(p); p.color = COLOR_BLACK;
                         }

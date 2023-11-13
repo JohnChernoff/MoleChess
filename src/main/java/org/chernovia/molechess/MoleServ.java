@@ -6,6 +6,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.FirebaseOptions;
+import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.firebase.messaging.FirebaseMessagingException;
+import com.google.firebase.messaging.Message;
+import com.google.firebase.messaging.Notification;
 import org.chernovia.lib.lichess.LichessSDK;
 import org.chernovia.lib.zugserv.ConnListener;
 import org.chernovia.lib.zugserv.Connection;
@@ -13,6 +20,8 @@ import org.chernovia.lib.zugserv.ZugServ;
 import org.chernovia.lib.zugserv.web.WebSockServ;
 import org.chernovia.utils.CommandLineParser;
 
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.sql.ResultSetMetaData;
 import java.sql.Types;
@@ -43,6 +52,7 @@ ai voting
 */
 
 public class MoleServ extends Thread implements ConnListener, MoleListener {
+
     static final Logger LOGGER = Logger.getLogger("MoleLog");
     static final String VERSION = getVersion("VERSION");
     static final String MSG_GAME_UPDATE = "game_update";
@@ -100,6 +110,15 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         }
         createPlayersTableIfNotExists();
         createGameTableIfNotExist();
+
+        InputStream serviceAccount = MoleServ.class.getResourceAsStream("/service-account.json");
+        try {
+            FirebaseOptions options = new FirebaseOptions.Builder()
+                    .setCredentials(GoogleCredentials.fromStream(serviceAccount))
+                    .build();
+            FirebaseApp.initializeApp(options);
+        } catch (IOException e) { throw new RuntimeException(e); }
+
     }
 
     private void createPlayersTableIfNotExists() {
@@ -308,7 +327,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     }
 
     private MoleUser getUserByToken(String token) {
-        for (MoleUser user : users) if (user.oauth.equals(token)) return user;
+        for (MoleUser user : users) if (user.lichessToken.equals(token)) return user;
         return null;
     }
 
@@ -322,16 +341,18 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         return null;
     }
 
-    private ArrayNode getAllGames(boolean shallowCopy) {
+    private ArrayNode getAllGames(boolean deepCopy) {
         try {
             ArrayNode gameObj = OBJ_MAPPER.createArrayNode();
             for (Map.Entry<String, MoleGame> entry : games.entrySet()) {
                 MoleGame game = entry.getValue();
-                if (shallowCopy) {
+                if (deepCopy) {
+                    gameObj.add(game.toJSON(false));
+                } else {
                     ObjectNode node = OBJ_MAPPER.createObjectNode();
                     node.put("title", game.getTitle());
                     gameObj.add(node);
-                } else gameObj.add(game.toJSON(false));
+                }
             }
             return gameObj;
         } catch (ConcurrentModificationException fuck) {
@@ -367,7 +388,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                 game.setMoveTime(defMoveTime);
                 games.put(title, game);
                 game.addPlayer(creator, color);
-                updateGames(false);
+                updateGames();
                 moleDisco.newGame(title);
             }
         } else {
@@ -395,16 +416,20 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             String typeTxt = typeNode.asText(), dataTxt = dataNode.asText();
 
             if (typeTxt.equals("pong")) {
-                user.tell("conn_stat",conn.getStatus().name());
+                if (conn.getStatus() == null) {
+                    logout(user); conn.close();
+                } else user.tell("conn_stat",conn.getStatus().name());
             } else if (typeTxt.equals("login")) {
                 handleLogin(conn, dataTxt);
             } else if (typeTxt.equals("logout")) {
                 logout(user);
-            } else if (typeTxt.equals("obs")) {
+            } else if (typeTxt.equals("obs_player")) { //useful for streaming
                 handleObs(conn,dataTxt);
             } else if (user == null) {
                 conn.tell("no_log", "Please log in");
-            } else if (!user.newMessage(5,10000)) {
+            } else if (typeTxt.equals("push_token")) { //for mobile
+                user.pushToken = dataTxt;
+            } else if (!user.newMessage(5,10000)) { //TODO: maybe use conn and not user for spam protection
                 user.tell("spam","Message not sent (spam)");
             } else if (typeTxt.equals("newgame")) {
                 JsonNode colorNode = dataNode.get("color");
@@ -471,7 +496,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     }
 
     private void logout(MoleUser user) {
-        if (users.contains(user)) {
+        if (user == null) {
+            log("Error: user == null");
+        }
+        else if (users.contains(user)) {
             user.tell("Goodbye!");
             purgeUser(user);
             users.remove(user);
@@ -634,7 +662,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     }
 
     private void updateGameList(MoleUser user) {
-        user.tell(MSG_GAMES_UPDATE, getAllGames(false));
+        user.tell(MSG_GAMES_UPDATE, getAllGames(true));
     }
 
     private MoleUser handleRelogging(Connection conn, LichessAccountData data) {
@@ -643,7 +671,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             if (user != null) {
                 user.tell("disconnected","Multiple login detected, closing");
                 user.getConn().close();
-                user.setConn(conn);  user.oauth = data.oauth;
+                user.setConn(conn);  user.lichessToken = data.oauth;
                 conn.setStatus(Connection.Status.STATUS_OK);
                 return user;
             }
@@ -722,6 +750,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         refreshAndGetUserData(user);
     }
 
+
+    /*
+    The logic here is that MoleResults with action.message == false do not send game updates
+     */
     @Override
     public void updateUser(MoleUser user, MoleGame game, MoleResult action, boolean moves) {
         if (user != null) {
@@ -745,21 +777,27 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
 
     @Override
     public void ready(MoleGame game) {
-        moleDisco.notifyReady(game.getTitle());
+        moleDisco.notifyReady(game);
+        for (MolePlayer player : game.getAllPlayers()) {
+            if (!Objects.equals(player.user.pushToken, "")) {
+                pushMsg(game.getTitle() + " is ready!",player.user);
+            }
+        }
     }
 
     @Override
     public void started(MoleGame game) {
         game.spamNode(MSG_GAME_UPDATE, game.toJSON(true));
-        updateGames(false);
+        updateGames();
         moleDisco.startGame(game.getTitle());
+        ready(game);
     }
 
 
     @Override
     public void finished(MoleGame game) {
         games.remove(game.getTitle());
-        updateGames(false);
+        updateGames();
         moleDisco.endGame(game.getTitle());
     }
 
@@ -780,8 +818,8 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         }
     }
 
-    private void updateGames(boolean deepcopy) {
-        spam("games_update", getAllGames(deepcopy));
+    private void updateGames() {
+        spam("games_update", getAllGames(true));
     }
 
     public void run() {
@@ -863,6 +901,26 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
                             remainder_minutes + " minutes and " + remainder_seconds + " seconds";
                 }
             }
+        }
+    }
+
+    private void pushMsg(String msg, MoleUser user) {
+        Message message =
+                Message.builder()
+                        .putData("FCM", "https://firebase.google.com/docs/cloud-messaging")
+                        .putData("flutter", "https://flutter.dev/")
+                        .setNotification(
+                                Notification.builder()
+                                        .setTitle("Mole Chess Notification")
+                                        .setBody(msg)
+                                        .build())
+                        .setToken(user.pushToken)
+                        .build();
+        try {
+            FirebaseMessaging.getInstance().send(message);
+            //System.out.println("Message to FCM Registration Token sent successfully!!");
+        } catch (FirebaseMessagingException e) {
+            log("Firebase messaging error: " + e);
         }
     }
 }

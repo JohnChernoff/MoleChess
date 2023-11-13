@@ -11,7 +11,9 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
 public class MoleUser {
-    String oauth;
+    static final long DISCO_UNKNOWN = -1;
+    String lichessToken, pushToken = "";
+    long discoID = MoleUser.DISCO_UNKNOWN;
     String name;
     int blitzRating;
     private Connection conn;
@@ -47,12 +49,12 @@ public class MoleUser {
     }
 
     public MoleUser(Connection c, String o, String n, int r) {
-        this.conn = c;
+        conn = c;
         if (conn != null) {
             conn.setStatus(Connection.Status.STATUS_OK);
         }
-        this.oauth = o;
-        this.name = n;
+        lichessToken = o;
+        name = n;
         blitzRating = r;
     }
 
@@ -91,6 +93,7 @@ public class MoleUser {
         else return (status.equals(Connection.Status.STATUS_OK));
     }
 
+    //public void doink(String msg) { tell(ZugServ.MSG_ERR,msg,null); }
     public void tell(String msg) { tell(ZugServ.MSG_SERV,msg,null); }
     public void tell(String msg, MoleGame game) { tell(ZugServ.MSG_SERV,msg,game); }
     public void tell(String type, String msg) { tell(type,msg,null); }
@@ -100,7 +103,6 @@ public class MoleUser {
         node.put("source",game == null ? "serv" : game.getTitle());
         tell(type,node);
     }
-
     public void tell(String type, JsonNode node) {
         if (this.conn != null) this.conn.tell(type, node); //TODO: check status?
         for (Connection obs : observers) {
@@ -119,7 +121,7 @@ public class MoleUser {
     public boolean equals(Object o) {
         if (o == this) return true;
         if (!(o instanceof MoleUser)) return false;
-        return ((MoleUser) o).oauth.equals(this.oauth);
+        return ((MoleUser) o).lichessToken.equals(this.lichessToken);
     }
 
     public boolean newMessage(int max, long millis) {

@@ -1,7 +1,7 @@
 package org.chernovia.molechess;
 
 import net.dv8tion.jda.api.*;
-import net.dv8tion.jda.api.entities.Guild;
+import net.dv8tion.jda.api.entities.*;
 import net.dv8tion.jda.api.entities.channel.Channel;
 import net.dv8tion.jda.api.entities.channel.concrete.Category;
 import net.dv8tion.jda.api.entities.channel.concrete.NewsChannel;
@@ -119,8 +119,18 @@ public class MoleDisco {
         channels.remove(title);
     }
 
-    public void notifyReady(String title) {
-        readyChannel.sendMessage(title + " has enough players to begin!").queue();
+    public void notifyReady(MoleGame game) {
+        readyChannel.sendMessage(game.getTitle() + " has enough players to begin!").queue();
+        String mentions = "";
+        for (MolePlayer p : game.getAllPlayers()) {
+            if (p.user.discoID != MoleUser.DISCO_UNKNOWN) {
+                User user = api.getUserById(p.user.discoID);
+                if (user != null) {
+                    mentions += user.getAsMention();
+                }
+            }
+        }
+        moleLogChannel.sendMessage(mentions + " - your game is ready!");
     }
 
     public void log(String msg) {

@@ -1,2 +1,3 @@
 /target/
 logs/
+/src/main/resources/service-account.json

@@ -72,6 +72,13 @@
 		   <version>5.0.0-beta.17</version>
 	   </dependency>
 
+	   <!-- https://mvnrepository.com/artifact/com.google.firebase/firebase-admin -->
+	   <dependency>
+		   <groupId>com.google.firebase</groupId>
+		   <artifactId>firebase-admin</artifactId>
+		   <version>8.0.1</version>
+	   </dependency>
+
 
    </dependencies>
   
@@ -100,6 +107,8 @@
                     <descriptorRefs>
                         <descriptorRef>jar-with-dependencies</descriptorRef>
                     </descriptorRefs>
+					<finalName>mole-chess</finalName>
+					<appendAssemblyId>false</appendAssemblyId>
                 </configuration>
             <executions>
                 <execution>
