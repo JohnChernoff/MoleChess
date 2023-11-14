@@ -20,7 +20,6 @@ import org.chernovia.lib.zugserv.ZugServ;
 import org.chernovia.lib.zugserv.web.WebSockServ;
 import org.chernovia.utils.CommandLineParser;
 
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.sql.ResultSetMetaData;
@@ -37,10 +36,10 @@ import java.util.stream.Stream;
 
 /* TODO:
 handle draws
-clarify observing, empty/pregame board timeouts
-Double Mole/Inspector/Takebacker/Captain Role?
 ai voting
 50 move rule draws
+~clarify observing, empty/pregame board timeouts
+~Double Mole/Inspector/Takebacker/Captain Role?
 
 ~handle AWOL team members
 ?update player leaving
@@ -60,11 +59,11 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     static final ObjectMapper OBJ_MAPPER = new ObjectMapper();
     static final Pattern ALPHANUMERIC_PATTERN = Pattern.compile("^[a-zA-Z0-9]*$");
     static final int MAX_STR_LEN = 30;
-    static String TEST = "";
+    static String TEST_TYPE = "";
     static String LOG_PATH = "%h/molechess/logs/";
     static String STOCK_PATH = "stockfish/stockfish";
     static int STOCK_STRENGTH = 2000, STOCK_MOLE_STRENGTH = 1500;
-    private final ArrayList<MoleUser> users = new ArrayList<>();
+    private final Vector<MoleUser> users = new Vector<>();
     private final ConcurrentHashMap<String, MoleGame> games = new ConcurrentHashMap<>();
     private ZugServ serv;
     private int purgeFreq = 30, maxUserGames = 3, defMoveTime = 60;
@@ -81,7 +80,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     public MoleServ(int port, String[] args) {
         CommandLineParser parser = new CommandLineParser(args);
         String[] test = parser.getArgumentValue("test");
-        if (test != null) TEST = test[0];
+        if (test != null) TEST_TYPE = test[0];
         String[] path = parser.getArgumentValue("stockpath");
         if (path != null) STOCK_PATH = path[0];
         log("Stock Path: " + STOCK_PATH);
@@ -111,7 +110,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         createPlayersTableIfNotExists();
         createGameTableIfNotExist();
 
-        InputStream serviceAccount = MoleServ.class.getResourceAsStream("/service-account.json");
+        InputStream serviceAccount = MoleServ.class.getResourceAsStream("/eek/service-account.json");
         try {
             FirebaseOptions options = new FirebaseOptions.Builder()
                     .setCredentials(GoogleCredentials.fromStream(serviceAccount))
@@ -790,7 +789,7 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         game.spamNode(MSG_GAME_UPDATE, game.toJSON(true));
         updateGames();
         moleDisco.startGame(game.getTitle());
-        ready(game);
+        //ready(game);
     }
 
 

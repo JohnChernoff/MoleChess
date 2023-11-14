@@ -728,8 +728,8 @@ public class MoleGame implements Runnable {
     public void run() {
         playing = true;
         newPhase(GAME_PHASE.VOTING); //necessary for getAllPlayers()
-        setRole(MolePlayer.ROLE.MOLE,MoleServ.TEST.equalsIgnoreCase("mole_test"));
-        if (inspecting) setRole(MolePlayer.ROLE.INSPECTOR,MoleServ.TEST.equalsIgnoreCase("inspect_test"));
+        setRole(MolePlayer.ROLE.MOLE,MoleServ.TEST_TYPE.equalsIgnoreCase("mole_test"));
+        if (inspecting) setRole(MolePlayer.ROLE.INSPECTOR,MoleServ.TEST_TYPE.equalsIgnoreCase("inspect_test"));
         confirmRoles();
         listener.started(this);  //starting position
         startPGN();
