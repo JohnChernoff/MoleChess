@@ -52,6 +52,7 @@ ai voting
 
 public class MoleServ extends Thread implements ConnListener, MoleListener {
 
+    enum NOTIFICATION_TYPE { ready, create, start, login }
     static final Logger LOGGER = Logger.getLogger("MoleLog");
     static final String VERSION = getVersion("VERSION");
     static final String MSG_GAME_UPDATE = "game_update";
@@ -427,7 +428,10 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             } else if (user == null) {
                 conn.tell("no_log", "Please log in");
             } else if (typeTxt.equals("push_token")) { //for mobile
-                user.pushToken = dataTxt;
+                JsonNode token = dataNode.get("token"); if (token != null) user.pushToken = token.asText();
+                user.notifications = dataNode.get("notifications");
+            } else if (typeTxt.equals("notify")) { //useful for streaming
+                user.notifications = dataNode;
             } else if (!user.newMessage(5,10000)) { //TODO: maybe use conn and not user for spam protection
                 user.tell("spam","Message not sent (spam)");
             } else if (typeTxt.equals("newgame")) {
@@ -692,7 +696,13 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
             conn.tell(ZugServ.MSG_ERR, "Login Error: Missing Oauth Token");
         } else {
             if (accountData.ok) {
+                conn.setHandle(accountData.name);
                 addUser(new MoleUser(conn,token,accountData.name,accountData.rating),"Welcome to MoleChess " + VERSION + "!");
+                for (MoleUser user : users) {
+                    if (!Objects.equals(user.pushToken, "")) {
+                        if (!user.sameConnection(conn)) pushMsg(conn.getHandle() + " logged on",user,NOTIFICATION_TYPE.login);
+                    }
+                }
             }
             else {
                 conn.tell(ZugServ.MSG_ERR, "Login Error: weird Lichess API result");
@@ -775,11 +785,20 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
     }
 
     @Override
+    public void created(MoleGame game) {
+        for (MoleUser user : users) {
+            if (!Objects.equals(user.pushToken, "")) {
+                pushMsg("New game created: " + game.getTitle(),user,NOTIFICATION_TYPE.create);
+            }
+        }
+    }
+
+    @Override
     public void ready(MoleGame game) {
         moleDisco.notifyReady(game);
         for (MolePlayer player : game.getAllPlayers()) {
             if (!Objects.equals(player.user.pushToken, "")) {
-                pushMsg(game.getTitle() + " is ready!",player.user);
+                pushMsg("Game ready to start: " + game.getTitle(),player.user,NOTIFICATION_TYPE.ready);
             }
         }
     }
@@ -789,7 +808,11 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         game.spamNode(MSG_GAME_UPDATE, game.toJSON(true));
         updateGames();
         moleDisco.startGame(game.getTitle());
-        //ready(game);
+        for (MolePlayer player : game.getAllPlayers()) {
+            if (!Objects.equals(player.user.pushToken, "")) {
+                pushMsg("Game started: " + game.getTitle(),player.user,NOTIFICATION_TYPE.start);
+            }
+        }
     }
 
 
@@ -903,23 +926,26 @@ public class MoleServ extends Thread implements ConnListener, MoleListener {
         }
     }
 
-    private void pushMsg(String msg, MoleUser user) {
-        Message message =
-                Message.builder()
-                        .putData("FCM", "https://firebase.google.com/docs/cloud-messaging")
-                        .putData("flutter", "https://flutter.dev/")
-                        .setNotification(
-                                Notification.builder()
-                                        .setTitle("Mole Chess Notification")
-                                        .setBody(msg)
-                                        .build())
-                        .setToken(user.pushToken)
-                        .build();
-        try {
-            FirebaseMessaging.getInstance().send(message);
-            //System.out.println("Message to FCM Registration Token sent successfully!!");
-        } catch (FirebaseMessagingException e) {
-            log("Firebase messaging error: " + e);
+    private void pushMsg(String msg, MoleUser user, NOTIFICATION_TYPE type) {
+        //log("Pushing message: " + msg + " to " + user.name);
+        if (user.notifications != null && user.notifications.get(type.toString()).asBoolean()) {
+            Message message =
+                    Message.builder()
+                            .putData("FCM", "https://firebase.google.com/docs/cloud-messaging")
+                            .putData("flutter", "https://flutter.dev/")
+                            .setNotification(
+                                    Notification.builder()
+                                            .setTitle("Mole Chess Notification")
+                                            .setBody(msg)
+                                            .build())
+                            .setToken(user.pushToken)
+                            .build();
+            try {
+                FirebaseMessaging.getInstance().send(message);
+                //log("Message to FCM Registration Token sent to " + user.name + ", :" + msg);
+            } catch (FirebaseMessagingException e) {
+                log("Firebase messaging error: " + e);
+            }
         }
     }
 }

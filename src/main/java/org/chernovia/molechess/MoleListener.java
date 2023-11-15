@@ -12,6 +12,8 @@ public interface MoleListener {
 
     void updateGame(MoleGame game, MoleResult action, boolean movelist);
 
+    void created(MoleGame game);
+
     void ready(MoleGame game);
 
     void finished(MoleGame game);

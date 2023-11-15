@@ -231,6 +231,7 @@ public class MoleGame implements Runnable {
         };
         colorList = Arrays.asList(COLORS);
         Collections.shuffle(colorList);
+        listener.created(this);
     }
 
     public ArrayList<MoleTeam> getTeams() {

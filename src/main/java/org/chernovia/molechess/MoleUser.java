@@ -5,15 +5,14 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.chernovia.lib.zugserv.Connection;
 import org.chernovia.lib.zugserv.ZugServ;
 
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
 public class MoleUser {
     static final long DISCO_UNKNOWN = -1;
     String lichessToken, pushToken = "";
     long discoID = MoleUser.DISCO_UNKNOWN;
+    JsonNode notifications = null;
     String name;
     int blitzRating;
     private Connection conn;
@@ -134,4 +133,5 @@ public class MoleUser {
         messageStack.add(currentTime);
         return true;
     }
+
 }
